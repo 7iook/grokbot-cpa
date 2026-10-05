@@ -15,7 +15,7 @@ Install and run [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) (CPA
   - **quick** — `*.trycloudflare.com` trial URL (changes on restart), 1 connector.
   - **none** — local only.
 - Fake-IP DNS detection (common on Grok Bot boxes): per-connector `/etc/hosts` via `unshare`, with TLS-probed edge IPs.
-- Watchdog that restarts unhealthy connectors one at a time and falls back on public HTTP 530s.
+- Watchdog that restarts unhealthy connectors one at a time; on public HTTP 530 it restarts all connectors at once (30s cooldown).
 - `healthcheck.sh` as the hourly / post-reboot recovery path (no systemd required).
 
 ## Architecture
@@ -99,7 +99,7 @@ This repository is MIT (`LICENSE`). It ships **no** binaries; `install.sh` downl
 - 本机 `127.0.0.1:8317`（可改）随机 API 密钥；管理面板默认不对公网开放
 - 隧道模式：`named`（自有域名 + token，双连接）、`quick`（临时 trycloudflare 地址）、`none`
 - 自动检测假 IP DNS，必要时用 `unshare` + 私有 hosts + 探测边缘 IP
-- 看门狗按连接健康状态逐个重启，公网 530 作兜底
+- 看门狗按连接健康状态逐个重启；公网 530 时立刻重启全部连接器（30 秒冷却）
 - `healthcheck.sh` 可作为每小时巡检与开机恢复（无需 systemd）
 
 ### 快速开始

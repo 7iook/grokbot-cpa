@@ -11,7 +11,7 @@ You are operating an existing **grokbot-cpa** install on this box. Default insta
 
 1. Never print `.tunnel-token`, `API_KEY.txt`, `MANAGEMENT_SECRET.txt`, or files under `AUTH_DIR`.
 2. Prefer the scripts in the install dir over ad-hoc `kill` / `curl` loops.
-3. When restarting connectors in **named** mode, restart **one at a time** (the watchdog already enforces a 60s gap). Do not stop both connectors together.
+3. When *you* restart connectors in **named** mode for routine recovery, restart **one at a time** (the watchdog enforces a 60s gap for unhealthy restarts). Do not stop both connectors together yourself — only the watchdog may restart all of them at once, and only on a public 530.
 4. Do not edit the live install of another project. Confirm the `.grokbot-cpa` marker first.
 
 ## Everyday commands
@@ -48,8 +48,8 @@ Cloudflare **HTTP 530** on the public URL means the edge could not reach any hea
 What the watchdog does (every ~15s):
 
 1. Checks each connector's `/ready` and `cloudflared_tunnel_ha_connections` on `127.0.0.1:$((METRICS_BASE+N))`.
-2. Restarts a connector that is unhealthy for ~30s, with cooldowns (60s between any two connector restarts, 120s before the same one restarts again). Never restarts both at once.
-3. Every ~60s, hits the public URL. One 530 (or two other failures in a row) restarts the least-healthy connector as a fallback.
+2. Restarts a connector that is unhealthy for ~30s, with cooldowns (60s between any two connector restarts, 120s before the same one restarts again). Unhealthy restarts stay one at a time.
+3. Hits the public URL every ~15s. A **530** restarts **all** connectors at once (nothing is serving, so there is nothing left to protect; in quick mode that is the single connector), at most every 30s. Two other public failures in a row restart the least-healthy connector as a fallback.
 
 What you should do when the user reports 530s:
 

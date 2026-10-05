@@ -3,18 +3,20 @@
 # - CLIProxyAPI process gone -> start it; local port not answering 2 checks in a row -> restart it.
 # - Connector N process gone -> start it (starting never drops a live connection).
 #   /ready not 200 or ha_connections < MIN_CONNS for 2 checks in a row (~30s) -> restart only that one.
-# - Connectors are never restarted together: at least GAP_ANY (60s) between any two connector restarts,
-#   and a connector is not restarted again within GAP_SELF (120s) of its own restart.
-# - Fallback: the public URL is checked every 60s. One 530 (Cloudflare "origin unreachable"), or 2 other
-#   failures in a row, restarts the least healthy connector (fewest connections; tie -> the one
-#   restarted longest ago), or the next one if that is still in cooldown.
+# - Unhealthy-connector restarts are staggered: at least GAP_ANY (60s) between any two connector
+#   restarts, and a connector is not restarted again within GAP_SELF (120s) of its own restart.
+# - Public URL is checked every 15s (PUBLIC_EVERY=1). A 530 means no connector is serving at all,
+#   so ALL connectors are restarted at once (nothing left to protect; in quick mode that is the
+#   single connector), at most every PUB_GAP (30s). 2 other failures in a row restart the least
+#   healthy connector (fewest connections; tie -> the one restarted longest ago), or the next one
+#   if that is still in cooldown.
 # Only touches processes recorded in this directory's pid files.
 set -uo pipefail
 . "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 LOG="$DIR/logs/watchdog.log"
-INTERVAL="${WATCHDOG_INTERVAL:-15}"; PUBLIC_EVERY=4; GAP_ANY=60; GAP_SELF=120
+INTERVAL="${WATCHDOG_INTERVAL:-15}"; PUBLIC_EVERY=1; GAP_ANY=60; GAP_SELF=120; PUB_GAP=30
 log() { echo "$(date '+%F %T') $*" >> "$LOG"; }
-local_fail=0; public_fail=0; tick=0; last_any_restart=0
+local_fail=0; public_fail=0; tick=0; last_any_restart=0; last_pub_restart=0
 declare -A bad=() last_restart=() conns=()
 for n in $(connectors); do bad[$n]=0; last_restart[$n]=0; conns[$n]=0; done
 
@@ -69,8 +71,16 @@ while true; do
       public_fail=0
     else
       public_fail=$((public_fail + 1)); log "public check failed ($pcode), streak $public_fail"
-      if [[ "$pcode" == 530 ]]; then need=1; else need=2; fi
-      if (( public_fail >= need )); then
+      now=$(date +%s)
+      if [[ "$pcode" == 530 ]]; then
+        if (( now - last_pub_restart >= PUB_GAP )); then
+          log "public 530: no connector serving, restarting all connectors"
+          for n in $(connectors); do
+            restart_connector "$n" "public 530"
+          done
+          last_pub_restart=$now
+        fi
+      elif (( public_fail >= 2 )); then
         order="$(for n in $(connectors); do probe_connector "$n"; echo "$CONNS ${last_restart[$n]} $n"; done | sort -k1,1n -k2,2n | awk '{print $3}')"
         for n in $order; do
           if can_restart "$n"; then restart_connector "$n" "public $pcode, least healthy available"; public_fail=0; break; fi
