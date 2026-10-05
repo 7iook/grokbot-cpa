@@ -1,0 +1,24 @@
+# CLIProxyAPI configuration written by grokbot-cpa install.sh.
+# Full reference: config.example.yaml in this directory (from the official release).
+# Bound to localhost only; public access goes through the Cloudflare tunnel.
+host: "127.0.0.1"
+port: @PORT@
+
+remote-management:
+  # false: management API/panel only from localhost (the tunnel forwards as remote, so it stays closed).
+  allow-remote: @ALLOW_REMOTE@
+  # Plaintext here is hashed by CLIProxyAPI on startup; the plaintext copy is in MANAGEMENT_SECRET.txt.
+  secret-key: "@MGMT_SECRET@"
+  disable-control-panel: false
+
+# Where OAuth credentials (e.g. claude-<account>.json) are stored.
+auth-dir: "@AUTH_DIR@"
+
+# Clients must send one of these as "Authorization: Bearer <key>" or "x-api-key: <key>".
+api-keys:
+  - "@API_KEY@"
+
+debug: false
+logging-to-file: false
+usage-statistics-enabled: false
+request-retry: 3

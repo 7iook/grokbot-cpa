@@ -1,0 +1,34 @@
+# Secrets and runtime state (never commit)
+*.pid
+*.token
+.tunnel-token
+.tunnel-hosts*
+.tunnel-protocol
+.claude-login.*
+.last-url
+.versions
+.grokbot-cpa
+cpa.env
+edge-ips.env
+PUBLIC_URL.txt
+API_KEY.txt
+MANAGEMENT_SECRET.txt
+PASSWORD.txt
+config.yaml
+
+# Binaries and downloads
+cli-proxy-api
+cloudflared
+dl/
+*.tar.gz
+*.zip
+
+# Logs, auth, local scratch
+logs/
+*.log
+auth/
+.cli-proxy-api/
+static/
+*.bak*
+*~
+.DS_Store

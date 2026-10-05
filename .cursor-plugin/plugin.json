@@ -1,0 +1,11 @@
+{
+  "name": "grokbot-cpa",
+  "displayName": "CPA (CLIProxyAPI) for Grok Bot",
+  "version": "1.0.0",
+  "description": "Install and operate CLIProxyAPI with a Cloudflare tunnel, dual connectors, and a health watchdog on a Grok Bot box.",
+  "author": { "name": "grokbot-cpa contributors" },
+  "license": "MIT",
+  "skills": ["skills/cpa-getting-started", "skills/cpa-ops"],
+  "homepage": "https://github.com/7iook/grokbot-cpa",
+  "repository": "https://github.com/7iook/grokbot-cpa"
+}
