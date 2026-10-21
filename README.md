@@ -4,8 +4,6 @@ Install and run [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) (CPA
 
 中文说明见下方 [中文](#中文).
 
-> **Risk / 风险:** Using a Claude *subscription* OAuth token outside Claude Code (including through CPA) may violate Anthropic's terms and can lead to account action or upstream `403 OAuth not allowed for this organization`. Prefer an Anthropic Console API key for a ToS-safer setup. You accept this risk by using subscription OAuth here.
-
 ## What you get
 
 - Pinned downloads of **CLIProxyAPI v8.0.4** and **cloudflared 2026.9.3** (checksum-verified).
