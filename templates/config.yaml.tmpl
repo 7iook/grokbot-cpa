@@ -18,6 +18,14 @@ auth-dir: "@AUTH_DIR@"
 api-keys:
   - "@API_KEY@"
 
+# Plugins (installed by install-plugins.sh: claude-keep-rolling, cpa-key-billing, usage-dashboard-zduu,
+# claude-cache-keepalive). The zduu registry provides "用量统计" (usage-dashboard-zduu).
+plugins:
+  enabled: true
+  dir: "plugins"
+  store-sources:
+    - "https://raw.githubusercontent.com/zduu/cpa-usage-plugin/main/registry.json"
+
 debug: false
 logging-to-file: false
 usage-statistics-enabled: false

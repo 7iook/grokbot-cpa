@@ -37,6 +37,7 @@ touch $D/.maintenance            # pause CPA restarts while watchdog keeps runni
 $D/upstream-check.sh             # auth files per provider (counts only)
 $D/refresh-model-catalog.sh      # save /v1/models to $D/models/models.json
 $D/claude-login.sh start|status|paste URL|stop
+$D/install-plugins.sh [--force]  # (re)install plugins from box.env CPA_PLUGINS + 缓存保活 (no Lamplighter)
 bash $T/ensure-up.sh             # bring Tailscale up (TS_AUTHKEY=... $T/set-authkey.sh if state was lost)
 touch $T/.watchdog-stopped       # keep the Tailscale watchdog from being relaunched
 ```

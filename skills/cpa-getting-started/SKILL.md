@@ -46,6 +46,20 @@ CF_HOSTNAME=api.example.com TS_HOSTNAME=cpa-box ./install.sh --with-cmcc --with-
 - `install.sh` writes `config.yaml` with a fresh client key (copy in `~/cli-proxy-api/secrets/client-api-key`)
   and management secret (`secrets/management-secret`), installs boot autostart (`~/.config/autostart/boot-services.desktop`).
 
+### 3b. Plugins (required; done by install.sh)
+`install.sh` runs `~/cli-proxy-api/install-plugins.sh` right after CPA starts and installs exactly these four
+(never install **Lamplighter**):
+| Panel name | Plugin id | How |
+|---|---|---|
+| 缓存保活 | `claude-cache-keepalive` | built from `github.com/Banben07/cpa_claude_cache_keep` @ `9b8637d` (Go + gcc) |
+| Claude Keep Rolling | `claude-keep-rolling` 0.2.4 | official plugin store |
+| API Key Billing | `cpa-key-billing` 1.4.0 | official plugin store |
+| 用量统计 | `usage-dashboard-zduu` 2.7.5 | zduu registry (`plugins.store-sources` in config.yaml) |
+
+Check its output; if a plugin failed, re-run `~/cli-proxy-api/install-plugins.sh` (idempotent) and, after a new
+`.so` was added, `~/cli-proxy-api/stop.sh` (the watchdog restarts CPA). Verify in the management panel → 插件.
+Opt out only if the user asks: `./install.sh --no-plugins`; the list is `CPA_PLUGINS` / `CACHE_KEEPALIVE` in box.env.
+
 ### 4. Secrets
 ```bash
 CF_TUNNEL_CREDENTIALS="$CF_TUNNEL_CREDENTIALS" ~/cli-proxy-api/set-tunnel-creds.sh   # writes cloudflared/config.yml

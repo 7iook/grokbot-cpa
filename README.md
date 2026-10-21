@@ -41,6 +41,14 @@ TS_AUTHKEY=tskey-auth-... /workspace/tailscale/set-authkey.sh
 CPA source: `CPA_SOURCE_REPO` / `CPA_SOURCE_REF` (branch, tag or commit) in box.env.
 Official release binary instead: `CPA_BUILD=release CPA_VERSION=v8.0.29 ./install.sh`.
 
+### Plugins
+
+Right after CPA starts, `install.sh` runs `$CPA_DIR/install-plugins.sh` (idempotent; skip with `--no-plugins`):
+缓存保活 `claude-cache-keepalive` (built from [Banben07/cpa_claude_cache_keep](https://github.com/Banben07/cpa_claude_cache_keep), needs Go + gcc),
+Claude Keep Rolling `claude-keep-rolling`, API Key Billing `cpa-key-billing` (official store) and 用量统计 `usage-dashboard-zduu`
+(zduu registry) via the management API `POST /v0/management/plugin-store/<id>/install`. Lamplighter is not installed.
+Configure with `CPA_PLUGINS` / `CACHE_KEEPALIVE*` in box.env.
+
 ### Where secrets live
 
 | Secret | Path |
@@ -71,4 +79,5 @@ CPA 默认从 `7iook/CLIProxyAPI` 的 `feat/claude-setup-token-quota` 分支源�
 - 配置：`~/.config/grokbot-cpa/box.env`（模板 `box/box.env.example`），不放任何密钥。
 - 安装：`./install.sh [--with-cmcc] [--with-activity]`，之后用 `set-tunnel-creds.sh`（隧道凭据）、`TS_AUTHKEY=... set-authkey.sh`（Tailscale）、`claude-login.sh start`（Claude 登录）。
 - 密钥位置见上表；客户端 key 在 `~/cli-proxy-api/secrets/client-api-key`。
+- 插件：安装后自动装 缓存保活、Claude Keep Rolling、API Key Billing、用量统计（不装 Lamplighter），`--no-plugins` 可跳过，重装用 `install-plugins.sh`。
 - 运维：`status.sh` / `healthcheck.sh` / `start-watchdog.sh` / `stop-all.sh` / `restart-tunnel.sh`，详见技能 `cpa-ops`。
