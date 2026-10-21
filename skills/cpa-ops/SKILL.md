@@ -1,94 +1,66 @@
 ---
 name: cpa-ops
-description: Operate and troubleshoot an existing grokbot-cpa install (status, restart, logs, 530s, upgrades, Anthropic 403). Never print secrets.
+description: Operate and troubleshoot a grokbot-cpa box-scheme install (CPA + named tunnel + Tailscale watchdogs, boot autostart, keepalives): status, start/stop, logs, tunnel restart, upgrades, Anthropic 403. Never print secrets.
 ---
 
-# CPA operations
+# CPA operations (box scheme)
 
-You are operating an existing **grokbot-cpa** install on this box. Default install dir is `~/cli-proxy-api` (look for a `.grokbot-cpa` marker and a `cpa.env`). Read `cpa.env` for `PORT`, `TUNNEL_MODE`, `PUBLIC_URL`, `AUTH_DIR`, `METRICS_BASE`.
+Settings: `~/.config/grokbot-cpa/box.env` (`CPA_DIR` default `~/cli-proxy-api`, `TS_DIR` default `/workspace/tailscale`,
+`CF_HOSTNAME`, `CF_TUNNEL`, `CPA_PORT` 8317, `CPA_SOURCE_REPO`/`CPA_SOURCE_REF`, `LOG_TZ`).
 
 ## Hard rules
+1. Never print: `$CPA_DIR/secrets/*` (client-api-key, management-secret, …), `$CPA_DIR/auths/*`, `$CPA_DIR/config.yaml`
+   key lines, `$CPA_DIR/cloudflared/*.json`, `$TS_DIR/authkey`, `$TS_DIR/tailscaled.state`.
+2. Use the scripts; do not `kill` processes ad hoc (the watchdogs would fight you).
+3. Daemons are started with a clean environment (`env -i`) on purpose so agent-session secrets never leak into them.
 
-1. Never print `.tunnel-token`, `API_KEY.txt`, `MANAGEMENT_SECRET.txt`, or files under `AUTH_DIR`.
-2. Prefer the scripts in the install dir over ad-hoc `kill` / `curl` loops.
-3. When *you* restart connectors in **named** mode for routine recovery, restart **one at a time** (the watchdog enforces a 60s gap for unhealthy restarts). Do not stop both connectors together yourself — only the watchdog may restart all of them at once, and only on a public 530.
-4. Do not edit the live install of another project. Confirm the `.grokbot-cpa` marker first.
+## How it runs
+- Boot: XFCE autostart `~/.config/autostart/boot-services.desktop` → `~/boot-services.sh` → starts the CPA watchdog and
+  `$TS_DIR/ensure-up.sh` (which starts the Tailscale watchdog). Missing deps/binaries → `/workspace/cpa-bootstrap.sh`.
+- `$CPA_DIR/watchdog.sh`: single instance (flock), runs CPA as its child, health checks, hang kill, backoff, detects VM
+  pause/snapshot-resume and stale tunnel flows → refreshes the tunnel, rotates logs, relaunches the Tailscale watchdog.
+- `$TS_DIR/watchdog.sh`: restarts tailscaled when offline (≈20s), restores state backup, re-applies `tailscale serve`
+  of `CPA_PORT`, relaunches `boot-services.sh` if the CPA watchdog is gone.
+- Keepalives (optional): `~/cmcc-cloud-alive/supervise.sh` (WebUI 127.0.0.1:28080, own autostart entry) and
+  `~/box-activity-test/ctl.sh start-all|stop|status` (browse loop + 30s monitor CSV).
 
-## Everyday commands
-
+## Commands
 ```bash
-D="${INSTALL_DIR:-$HOME/cli-proxy-api}"
-"$D/status.sh"          # read-only overview
-"$D/healthcheck.sh"     # check + repair; also start-after-reboot
-"$D/start-all.sh"       # start everything that is down
-"$D/stop-all.sh"        # stop watchdog first, then the rest
+D=~/cli-proxy-api; T=/workspace/tailscale
+$D/status.sh                     # overview (read-only)
+$D/healthcheck.sh                # check + self-heal; RESULT: OK|FIXED|FAILED
+$D/start-watchdog.sh             # start watchdog (starts CPA + tunnel), clears .watchdog-stopped
+$D/stop-all.sh                   # stop watchdog (sets .watchdog-stopped), tunnel, CPA
+$D/stop.sh && $D/start.sh        # restart CPA only (watchdog adopts it)
+$D/restart-tunnel.sh [fast]      # serialized tunnel restart
+touch $D/.maintenance            # pause CPA restarts while watchdog keeps running (rm to resume)
+$D/upstream-check.sh             # auth files per provider (counts only)
+$D/refresh-model-catalog.sh      # save /v1/models to $D/models/models.json
+$D/claude-login.sh start|status|paste URL|stop
+bash $T/ensure-up.sh             # bring Tailscale up (TS_AUTHKEY=... $T/set-authkey.sh if state was lost)
+touch $T/.watchdog-stopped       # keep the Tailscale watchdog from being relaunched
 ```
+Logs: `$D/logs/{watchdog.log,cpa.out,tunnel.log,boot.log}`, `$T/{ensure-up.log,watchdog.log,tailscaled.log}`,
+`~/cmcc-cloud-alive/logs/`, `~/box-activity-test/logs/`.
 
-Logs (tail these, do not paste secrets if any appear):
-
-- `$D/logs/cli-proxy-api.log`
-- `$D/logs/tunnel1.log` / `tunnel2.log`
-- `$D/logs/watchdog.log`
-- `$D/logs/healthcheck.log`
-- `$D/logs/keepalive.log`
-
-## Restart patterns
-
-- **API only:** `"$D/stop.sh" && "$D/start.sh"`
-- **One connector:** `"$D/stop-tunnel.sh" 1 && sleep 2 && "$D/start-tunnel.sh" 1` (then the other, after ≥60s, if needed)
-- **Watchdog:** `"$D/stop-watchdog.sh" && "$D/start-watchdog.sh"`
-- **Full recycle:** `"$D/stop-all.sh" && "$D/start-all.sh"` then `"$D/healthcheck.sh"`
-
-In **quick** mode a connector restart issues a **new** `*.trycloudflare.com` URL. Update `PUBLIC_URL.txt` clients afterwards; `healthcheck.sh` prints `NOTE: public URL changed ...` when it detects that.
-
-## The 530 pattern
-
-Cloudflare **HTTP 530** on the public URL means the edge could not reach any healthy origin connection.
-
-What the watchdog does (every ~15s):
-
-1. Checks each connector's `/ready` and `cloudflared_tunnel_ha_connections` on `127.0.0.1:$((METRICS_BASE+N))`.
-2. Restarts a connector that is unhealthy for ~30s, with cooldowns (60s between any two connector restarts, 120s before the same one restarts again). Unhealthy restarts stay one at a time.
-3. Hits the public URL every ~15s. A **530** restarts **all** connectors at once (nothing is serving, so there is nothing left to protect; in quick mode that is the single connector), at most every 30s. Two other public failures in a row restart the least-healthy connector as a fallback.
-
-What you should do when the user reports 530s:
-
-1. `"$D/status.sh"` and read `logs/watchdog.log` / `logs/tunnelN.log`.
-2. Confirm local `$PORT` still returns 200.
-3. If **named** and both connectors are flapping on a Grok Bot box, the outbound proxy is likely cutting long-lived connections — dual connectors reduce but do not eliminate this. Suggest moving to a real VPS for stability.
-4. Re-run `"$D/probe-edges.sh" --write` only when `HOSTS_WORKAROUND=1`, then restart connectors one at a time to pick up new edge IPs.
+## Public 530 / 502
+Cloudflare could not reach a live connector. Usually the box was paused/restored and the tunnel's edge flows died:
+the watchdog detects this (`vm_resumed`, `tunnel_conns_stale`) and refreshes; manually: `$D/restart-tunnel.sh fast`.
+DNS on the box returns fake 198.18.x.x addresses, so `start-tunnel.sh` resolves real edge IPs via OpenDNS:5353
+(`cloudflared/resolve-edge.py`). Check `$D/logs/tunnel.log`.
 
 ## Upgrades
-
 ```bash
-git -C /tmp/grokbot-cpa-src pull --ff-only   # or re-clone
-cd /tmp/grokbot-cpa-src
-# keep existing keys/config:
-INSTALL_DIR="$D" ./install.sh --no-probe
-"$D/stop-all.sh" && "$D/start-all.sh"
-"$D/healthcheck.sh"
+git -C ~/grokbot-cpa pull --ff-only && cd ~/grokbot-cpa
+rm -f ~/cli-proxy-api/bin/cli-proxy-api            # force a rebuild of CPA_SOURCE_REF (or set CPA_SOURCE_REF=<commit>)
+./install.sh                                       # keeps config.yaml, secrets, auths, tailscale state
+~/cli-proxy-api/stop.sh                            # watchdog restarts CPA with the new binary
 ```
+Release binary instead of the fork: `CPA_BUILD=release` in box.env.
 
-`install.sh` is idempotent: it re-copies scripts, keeps `config.yaml` / `API_KEY.txt` unless you pass `--reset-config`, and re-downloads binaries only when the pinned version changes. Pin overrides: `CPA_VERSION`, `CLOUDFLARED_VERSION`.
-
-## Anthropic 403 — "OAuth not allowed for this organization"
-
-This comes from **Anthropic**, not from CPA or the tunnel. Local restarts will not fix it. Typical meaning: the Claude account / org is not allowed to use that OAuth client outside Claude Code, or the subscription was restricted.
-
-What to tell the user:
-
-1. Confirm in `logs/cli-proxy-api.log` that the 403 is from the upstream Claude call.
-2. They can wait / contact Anthropic, or switch to an **Anthropic Console API key** (add it through CPA's config / management UI — keep `allow-remote: false`).
-3. Remind them of the ToS risk of subscription OAuth outside Claude Code.
+## Anthropic 403 "OAuth not allowed for this organization"
+Comes from Anthropic, not CPA/tunnel; restarts do not help. Confirm in `$D/logs/cpa.out`; options: wait/contact
+Anthropic, or use an Anthropic Console API key (`claude-api-key` in config.yaml). Remind the user of the ToS risk.
 
 ## Uninstall
-
-```bash
-"$D/uninstall.sh"          # dry run
-"$D/uninstall.sh" --yes    # stop processes, delete install dir, keep AUTH_DIR
-"$D/uninstall.sh" --yes --purge-auth   # also delete AUTH_DIR (Claude credentials)
-```
-
-## Changing tunnel mode
-
-Edit `$D/cpa.env` (`TUNNEL_MODE`, `PUBLIC_URL`), then for named run `set-tunnel-token.sh`, then `"$D/stop-tunnel.sh" all && "$D/start-tunnel.sh" all`. Or re-run `install.sh` with the new env vars (it preserves keys).
+`~/grokbot-cpa/uninstall.sh` (dry run) · `--yes` (stop + remove autostart) · `--yes --purge` (also deletes CPA_DIR/TS_DIR incl. secrets).

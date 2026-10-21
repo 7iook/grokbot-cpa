@@ -1,148 +1,74 @@
 # grokbot-cpa
 
-Install and run [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) (CPA) on a **Grok Bot** box (or any Linux host) with a Cloudflare tunnel, optional dual connectors, and a health watchdog.
+Install and run [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) (CPA) on a **Grok Bot** box with a named
+Cloudflare tunnel, Tailscale, two watchdogs that relaunch each other, boot autostart and optional keepalives.
+CPA is built from the fork **[7iook/CLIProxyAPI](https://github.com/7iook/CLIProxyAPI)** (`feat/claude-setup-token-quota`) by default.
 
 中文说明见下方 [中文](#中文).
 
-## What you get
+> **Risk notice:** using a Claude subscription's OAuth outside Claude Code (including through CPA) may violate
+> Anthropic's terms (403 "OAuth not allowed for this organization", account action). An Anthropic Console API key is safer.
 
-- Pinned downloads of **CLIProxyAPI v8.0.4** and **cloudflared 2026.9.3** (checksum-verified).
-- Local API on `127.0.0.1:8317` (configurable) with a random API key; management API **not** exposed through the tunnel by default.
-- Tunnel modes:
-  - **named** — your Cloudflare tunnel token + hostname, **2 connectors**, best stability.
-  - **quick** — `*.trycloudflare.com` trial URL (changes on restart), 1 connector.
-  - **none** — local only.
-- Fake-IP DNS detection (common on Grok Bot boxes): per-connector `/etc/hosts` via `unshare`, with TLS-probed edge IPs.
-- Watchdog that restarts unhealthy connectors one at a time; on public HTTP 530 it restarts all connectors at once (30s cooldown).
-- `healthcheck.sh` as the hourly / post-reboot recovery path (no systemd required).
-
-## Architecture
+## Layout
 
 ```
-Clients ──HTTPS──► Cloudflare edge ──tunnel──► cloudflared (1 or 2 connectors)
-                                                      │
-                                                      ▼
-                                              CLIProxyAPI :PORT
-                                                      │
-                                                      ▼
-                                              Claude OAuth / API
+install.sh              entry point (calls box/install-box.sh, writes config.yaml + secrets/, starts services)
+uninstall.sh            stop + remove autostart (--purge deletes install dirs)
+box/box.env.example     all settings -> ~/.config/grokbot-cpa/box.env
+box/cpa/                CPA watchdog v2 + start/stop/status/healthcheck/tunnel/claude-login/... -> $CPA_DIR
+box/tailscale/          ensure-up.sh, watchdog.sh, lib.sh, set-authkey.sh -> $TS_DIR
+box/boot-services.sh    boot hook (XFCE autostart; no systemd/cron on the box) -> ~/boot-services.sh
+box/cpa-bootstrap.sh    deps + CPA binary (source build or release) after a box reset -> /workspace/cpa-bootstrap.sh
+box/autostart/          .desktop templates
+keepalive/cmcc/         installs github.com/1936-zero/cmcc-cloud-alive WebUI + supervisor (--with-cmcc)
+keepalive/box-activity/ browse loop + monitor that keep the box active (--with-activity)
+templates/config.yaml.tmpl
+skills/                 cpa-getting-started, cpa-ops (Grok Bot skills)
 ```
 
-On hosts whose DNS maps `*.argotunnel.com` into `198.18.0.0/15`, each connector runs in a user+mount namespace with a private hosts file listing real edge IPs so HA connections can form.
-
-## Quick start
-
-### Via Grok Bot template (recommended)
-
-> Template link: **(placeholder — paste the public Grok Bot template URL here once published)**
-
-Add the template bot, then follow the `cpa-getting-started` skill (it asks one question at a time, takes the tunnel token through secure input, installs, runs Claude login in the box browser, and creates the hourly routine).
-
-### Manual
+## Install
 
 ```bash
-git clone https://github.com/7iook/grokbot-cpa.git
-cd grokbot-cpa
-
-# Trial (random trycloudflare URL):
-TUNNEL_MODE=quick ./install.sh
-
-# Stable (your hostname + tunnel token):
-TUNNEL_MODE=named PUBLIC_URL=https://api.example.com ./install.sh
-CF_TUNNEL_TOKEN=... ./bin/set-tunnel-token.sh   # after install, from $INSTALL_DIR
-
-"$HOME/cli-proxy-api/start-all.sh"
-"$HOME/cli-proxy-api/claude-login.sh" start   # open the URL on this machine
-"$HOME/cli-proxy-api/healthcheck.sh"
+git clone https://github.com/7iook/grokbot-cpa.git ~/grokbot-cpa && cd ~/grokbot-cpa
+CF_HOSTNAME=api.example.com TS_HOSTNAME=cpa-box ./install.sh [--with-cmcc] [--with-activity]
+# secrets (never committed, never in box.env):
+CF_TUNNEL_CREDENTIALS_FILE=./<tunnel-id>.json ~/cli-proxy-api/set-tunnel-creds.sh && ~/cli-proxy-api/restart-tunnel.sh
+TS_AUTHKEY=tskey-auth-... /workspace/tailscale/set-authkey.sh
+~/cli-proxy-api/claude-login.sh start        # open the URL in this box's browser
+~/cli-proxy-api/healthcheck.sh               # RESULT: OK
 ```
 
-Settings (`INSTALL_DIR`, `PORT`, `METRICS_BASE`, `AUTH_DIR`, `TUNNEL_MODE`, …) are documented in `cpa.env.example` and written to `$INSTALL_DIR/cpa.env`.
+CPA source: `CPA_SOURCE_REPO` / `CPA_SOURCE_REF` (branch, tag or commit) in box.env.
+Official release binary instead: `CPA_BUILD=release CPA_VERSION=v8.0.29 ./install.sh`.
 
-## Requirements
+### Where secrets live
 
-- Linux (amd64 or arm64), `bash`, `curl`, `tar`, `openssl`, `python3` optional.
-- For the hosts workaround: `unshare --user --map-root-user --mount` (usually available).
-- Named mode: Cloudflare account, zone, tunnel token, hostname routed to `http://localhost:$PORT`.
-- A Claude account you are willing to OAuth-login on this host (see risk notice).
+| Secret | Path |
+|---|---|
+| client API key (Bearer) | `$CPA_DIR/secrets/client-api-key` (+ `api-keys` in `config.yaml`) |
+| management secret | `$CPA_DIR/secrets/management-secret` |
+| Claude / provider OAuth | `$CPA_DIR/auths/*.json` |
+| tunnel credentials | `$CPA_DIR/cloudflared/<tunnel-id>.json` |
+| Tailscale auth key / node state | `$TS_DIR/authkey`, `$TS_DIR/tailscaled.state` (root, 600) |
 
-## Layout after install
+## Operations
 
-```
-$INSTALL_DIR/
-  cli-proxy-api  cloudflared
-  config.yaml  API_KEY.txt  MANAGEMENT_SECRET.txt  cpa.env
-  start-all.sh stop-all.sh status.sh healthcheck.sh
-  start-tunnel.sh watchdog.sh claude-login.sh ...
-  logs/
-```
-
-## Box profile (current reference setup) — `box/` + `keepalive/`
-
-The scripts actually running on the reference Grok Bot box, generalized via `~/.config/grokbot-cpa/box.env`
-(template: `box/box.env.example`). Use this instead of `install.sh` if you want the exact production setup:
-
-- `box/cpa/` — CPA watchdog v2 (single instance via flock, child-process supervision, hang detection, backoff,
-  VM pause/snapshot-resume detection, stale-tunnel-flow refresh, log rotation) + start/stop/healthcheck/
-  upstream-check/tunnel scripts for a **named cloudflared tunnel** (`$CPA_DIR/cloudflared/config.yml`).
-- `box/tailscale/` — Tailscale `ensure-up.sh` + watchdog (kernel TUN or userspace fallback, offline/resume
-  restart, state backup, `tailscale serve` of `CPA_PORT` on the tailnet). The CPA and Tailscale watchdogs relaunch each other.
-- `box/boot-services.sh` + `box/autostart/*.desktop` — boot path (XFCE autostart; the box has no systemd/cron).
-- `box/cpa-bootstrap.sh` — reinstall deps/binaries after a box reset. **By default builds CPA from the fork
-  `CPA_SOURCE_REPO=https://github.com/7iook/CLIProxyAPI` at `CPA_SOURCE_REF=feat/claude-setup-token-quota`**
-  (`CPA_BUILD=release` downloads the upstream release `CPA_VERSION` instead).
-- `keepalive/cmcc/` — installs [cmcc-cloud-alive](https://github.com/1936-zero/cmcc-cloud-alive) WebUI (127.0.0.1:28080) + supervisor.
-- `keepalive/box-activity/` — headful-Chrome browse loop + 30s monitor (CSV) that keep the box active.
-
-```bash
-./box/install-box.sh --with-cmcc --with-activity
-# then provide secrets yourself: $CPA_DIR/config.yaml, $CPA_DIR/auths/, $CPA_DIR/cloudflared/*, $TS_DIR/authkey
-/workspace/cpa-bootstrap.sh
-```
-
-中文：`box/` 是参考机上正在运行的版本（看门狗 v2、Tailscale 看门狗、开机自启、保活），路径/域名等通过 `box.env` 配置；
-CPA 默认从 `7iook/CLIProxyAPI` 的 `feat/claude-setup-token-quota` 分支源码编译。密钥文件一律不进仓库，需手动放置。
+`status.sh`, `healthcheck.sh`, `start-watchdog.sh`, `stop-all.sh`, `restart-tunnel.sh`, `claude-login.sh` in `$CPA_DIR`;
+logs in `$CPA_DIR/logs/` and `$TS_DIR/*.log`. See `skills/cpa-ops/SKILL.md`.
 
 ## Credits
 
-- [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) — MIT License
-- [cloudflared](https://github.com/cloudflare/cloudflared) — Apache-2.0
-
-This repository is MIT (`LICENSE`). It ships **no** binaries; `install.sh` downloads official releases.
+[CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) (MIT), [cloudflared](https://github.com/cloudflare/cloudflared) (Apache-2.0),
+[cmcc-cloud-alive](https://github.com/1936-zero/cmcc-cloud-alive) (MIT). This repo is MIT and ships no binaries.
 
 ---
 
 ## 中文
 
-在 **Grok Bot** 电脑（或任意 Linux）上安装 [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)，并用 Cloudflare 隧道把 API 暴露出去；带双连接、健康检查看门狗，以及重启后自动恢复。
+在 Grok Bot 电脑上部署 CPA：命名 Cloudflare 隧道 + Tailscale + 两个互相拉起的看门狗 + 开机自启（XFCE autostart）+ 可选保活。
+CPA 默认从 `7iook/CLIProxyAPI` 的 `feat/claude-setup-token-quota` 分支源码编译（`CPA_BUILD=release` 改用官方发行版）。
 
-> **风险提示：** 在 Claude Code 之外使用订阅账号的 OAuth（包括经 CPA 转发）可能违反 Anthropic 条款，存在封号或上游返回 `403 OAuth not allowed for this organization` 的风险。更稳妥的做法是改用 Anthropic Console 的 API key。继续使用即表示你接受该风险。
-
-### 你能得到什么
-
-- 固定版本下载并校验：**CLIProxyAPI v8.0.4**、**cloudflared 2026.9.3**
-- 本机 `127.0.0.1:8317`（可改）随机 API 密钥；管理面板默认不对公网开放
-- 隧道模式：`named`（自有域名 + token，双连接）、`quick`（临时 trycloudflare 地址）、`none`
-- 自动检测假 IP DNS，必要时用 `unshare` + 私有 hosts + 探测边缘 IP
-- 看门狗按连接健康状态逐个重启；公网 530 时立刻重启全部连接器（30 秒冷却）
-- `healthcheck.sh` 可作为每小时巡检与开机恢复（无需 systemd）
-
-### 快速开始
-
-**Grok Bot 模板（推荐）：** 模板链接占位（发布后贴到此处）。添加模板机器人后按 `cpa-getting-started` 技能引导即可（隧道 token 走加密输入，不在聊天里粘贴）。
-
-**手动：**
-
-```bash
-git clone https://github.com/7iook/grokbot-cpa.git && cd grokbot-cpa
-TUNNEL_MODE=quick ./install.sh          # 试用
-# 或：TUNNEL_MODE=named PUBLIC_URL=https://api.example.com ./install.sh
-"$HOME/cli-proxy-api/start-all.sh"
-"$HOME/cli-proxy-api/claude-login.sh" start
-"$HOME/cli-proxy-api/healthcheck.sh"
-```
-
-更多选项见 `cpa.env.example`。运维与排障见技能 `cpa-ops`。
-
-### 致谢
-
-CLIProxyAPI（MIT）、cloudflared（Apache-2.0）。本仓库本身为 MIT，不包含二进制，由 `install.sh` 从官方 Release 下载。
+- 配置：`~/.config/grokbot-cpa/box.env`（模板 `box/box.env.example`），不放任何密钥。
+- 安装：`./install.sh [--with-cmcc] [--with-activity]`，之后用 `set-tunnel-creds.sh`（隧道凭据）、`TS_AUTHKEY=... set-authkey.sh`（Tailscale）、`claude-login.sh start`（Claude 登录）。
+- 密钥位置见上表；客户端 key 在 `~/cli-proxy-api/secrets/client-api-key`。
+- 运维：`status.sh` / `healthcheck.sh` / `start-watchdog.sh` / `stop-all.sh` / `restart-tunnel.sh`，详见技能 `cpa-ops`。

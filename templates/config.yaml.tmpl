@@ -1,20 +1,20 @@
-# CLIProxyAPI configuration written by grokbot-cpa install.sh.
-# Full reference: config.example.yaml in this directory (from the official release).
-# Bound to localhost only; public access goes through the Cloudflare tunnel.
+# CLIProxyAPI configuration written by grokbot-cpa install.sh (box scheme).
+# Bound to localhost; public access goes through the named Cloudflare tunnel, tailnet access via `tailscale serve`.
 host: "127.0.0.1"
 port: @PORT@
 
 remote-management:
-  # false: management API/panel only from localhost (the tunnel forwards as remote, so it stays closed).
+  # false: management API/panel only from localhost. Set true only if you really need remote management.
   allow-remote: @ALLOW_REMOTE@
-  # Plaintext here is hashed by CLIProxyAPI on startup; the plaintext copy is in MANAGEMENT_SECRET.txt.
+  # Hashed by CLIProxyAPI on startup; the plaintext copy is $CPA_DIR/secrets/management-secret.
   secret-key: "@MGMT_SECRET@"
   disable-control-panel: false
 
-# Where OAuth credentials (e.g. claude-<account>.json) are stored.
+# OAuth credentials (claude-<account>.json, ...).
 auth-dir: "@AUTH_DIR@"
 
-# Clients must send one of these as "Authorization: Bearer <key>" or "x-api-key: <key>".
+# Clients send one of these as "Authorization: Bearer <key>". Copy: $CPA_DIR/secrets/client-api-key
+# (healthcheck.sh / refresh-model-catalog.sh read that file).
 api-keys:
   - "@API_KEY@"
 

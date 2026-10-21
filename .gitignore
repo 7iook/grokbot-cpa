@@ -1,20 +1,10 @@
 # Secrets and runtime state (never commit)
 *.pid
-*.token
-.tunnel-token
-.tunnel-hosts*
-.tunnel-protocol
-.claude-login.*
-.last-url
-.versions
-.grokbot-cpa
-cpa.env
-edge-ips.env
-PUBLIC_URL.txt
-API_KEY.txt
-MANAGEMENT_SECRET.txt
-PASSWORD.txt
 config.yaml
+box.env
+.claude-login.*
+.watchdog-stopped
+.maintenance
 
 # Binaries and downloads
 cli-proxy-api
@@ -42,3 +32,7 @@ auths/
 secrets/
 .venv*/
 chrome-profile/
+
+# box scheme runtime
+.watchdog-stopped
+.maintenance
