@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=Box services (CPA + Tailscale supervisors)
+Exec=/bin/bash @HOME@/boot-services.sh
+X-GNOME-Autostart-enabled=true
+NoDisplay=true

@@ -76,6 +76,32 @@ $INSTALL_DIR/
   logs/
 ```
 
+## Box profile (current reference setup) — `box/` + `keepalive/`
+
+The scripts actually running on the reference Grok Bot box, generalized via `~/.config/grokbot-cpa/box.env`
+(template: `box/box.env.example`). Use this instead of `install.sh` if you want the exact production setup:
+
+- `box/cpa/` — CPA watchdog v2 (single instance via flock, child-process supervision, hang detection, backoff,
+  VM pause/snapshot-resume detection, stale-tunnel-flow refresh, log rotation) + start/stop/healthcheck/
+  upstream-check/tunnel scripts for a **named cloudflared tunnel** (`$CPA_DIR/cloudflared/config.yml`).
+- `box/tailscale/` — Tailscale `ensure-up.sh` + watchdog (kernel TUN or userspace fallback, offline/resume
+  restart, state backup, `tailscale serve` of `CPA_PORT` on the tailnet). The CPA and Tailscale watchdogs relaunch each other.
+- `box/boot-services.sh` + `box/autostart/*.desktop` — boot path (XFCE autostart; the box has no systemd/cron).
+- `box/cpa-bootstrap.sh` — reinstall deps/binaries after a box reset. **By default builds CPA from the fork
+  `CPA_SOURCE_REPO=https://github.com/7iook/CLIProxyAPI` at `CPA_SOURCE_REF=feat/claude-setup-token-quota`**
+  (`CPA_BUILD=release` downloads the upstream release `CPA_VERSION` instead).
+- `keepalive/cmcc/` — installs [cmcc-cloud-alive](https://github.com/1936-zero/cmcc-cloud-alive) WebUI (127.0.0.1:28080) + supervisor.
+- `keepalive/box-activity/` — headful-Chrome browse loop + 30s monitor (CSV) that keep the box active.
+
+```bash
+./box/install-box.sh --with-cmcc --with-activity
+# then provide secrets yourself: $CPA_DIR/config.yaml, $CPA_DIR/auths/, $CPA_DIR/cloudflared/*, $TS_DIR/authkey
+/workspace/cpa-bootstrap.sh
+```
+
+中文：`box/` 是参考机上正在运行的版本（看门狗 v2、Tailscale 看门狗、开机自启、保活），路径/域名等通过 `box.env` 配置；
+CPA 默认从 `7iook/CLIProxyAPI` 的 `feat/claude-setup-token-quota` 分支源码编译。密钥文件一律不进仓库，需手动放置。
+
 ## Credits
 
 - [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) — MIT License

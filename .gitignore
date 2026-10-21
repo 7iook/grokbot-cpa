@@ -32,3 +32,13 @@ static/
 *.bak*
 *~
 .DS_Store
+
+# box profile runtime/secrets
+authkey
+*.state
+state-backup.json
+box.env
+auths/
+secrets/
+.venv*/
+chrome-profile/

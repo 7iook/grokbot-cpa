@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=cmcc-cloud-alive WebUI supervisor
+Exec=/bin/bash @HOME@/cmcc-cloud-alive/supervise.sh
+X-GNOME-Autostart-enabled=true
+NoDisplay=true
