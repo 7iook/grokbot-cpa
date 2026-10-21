@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 BOX_ENV="${GROKBOT_BOX_ENV:-$HOME/.config/grokbot-cpa/box.env}"; [ -f "$BOX_ENV" ] && . "$BOX_ENV"   # grokbot-cpa: site settings (see box/box.env.example)
 # Idempotent bootstrap for CLIProxyAPI on the box. Safe to re-run after a box reset.
-# - reinstalls apt deps (only /home/box and /workspace survive a reset)
+# - reinstalls apt deps (only PERSIST_ROOT=/home/box survives a reset)
 # - re-downloads the pinned binary if missing
 # - (re)starts the CPA watchdog (which starts CPA + tunnel) if /home/box/cli-proxy-api exists
 # Normal boots go through /home/box/boot-services.sh, which calls this only when something is missing.

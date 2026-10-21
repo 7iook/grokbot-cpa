@@ -71,7 +71,7 @@ tunnel_conns_stale() {
     END { exit bad ? 0 : 1 }'
 }
 # --- peer: the Tailscale watchdog (the two watchdogs relaunch each other; there is no cron/systemd here) ---
-TS_DIR=${TS_DIR:-/workspace/tailscale}
+TS_DIR=${TS_DIR:-$HOME/tailscale}
 TS_WD_LOCK=$TS_DIR/.watchdog.lock
 TS_WD_PIDFILE=$TS_DIR/watchdog.pid
 TS_WD_HEARTBEAT=$TS_DIR/watchdog.heartbeat

@@ -47,9 +47,9 @@ if [ $TUNNEL_ON = 1 ] && [ -z "$failed" ]; then
   fi
 elif [ $TUNNEL_ON = 0 ]; then echo "tunnel: not configured/disabled (skipped)"; fi
 # tailscale: informational only, never affects RESULT/exit code
-if [ -x ${TS_DIR:-/workspace/tailscale}/ensure-up.sh ]; then
-  timeout 150 /bin/bash ${TS_DIR:-/workspace/tailscale}/ensure-up.sh >/dev/null 2>&1 || true
-  tsst=$(sudo -n ${TS_DIR:-/workspace/tailscale}/tailscale --socket=${TS_DIR:-/workspace/tailscale}/tailscaled.sock status --json 2>/dev/null | jq -r '"\(.BackendState) \(.TailscaleIPs[0] // "-") \(.Self.DNSName // "-" | rtrimstr("."))"' 2>/dev/null)
+if [ -x ${TS_DIR:-$HOME/tailscale}/ensure-up.sh ]; then
+  timeout 150 /bin/bash ${TS_DIR:-$HOME/tailscale}/ensure-up.sh >/dev/null 2>&1 || true
+  tsst=$(sudo -n ${TS_DIR:-$HOME/tailscale}/tailscale --socket=${TS_DIR:-$HOME/tailscale}/tailscaled.sock status --json 2>/dev/null | jq -r '"\(.BackendState) \(.TailscaleIPs[0] // "-") \(.Self.DNSName // "-" | rtrimstr("."))"' 2>/dev/null)
   echo "tailscale (info): ${tsst:-not running}"
 fi
 tun=""; [ $TUNNEL_ON = 1 ] && tun=", tunnel https://$CF_HOSTNAME up"

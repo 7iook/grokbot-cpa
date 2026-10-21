@@ -7,7 +7,7 @@ for a in "$@"; do case "$a" in --yes|-y) YES=1;; --purge) PURGE=1;; *) sed -n '2
 CFG="${GROKBOT_BOX_ENV:-$HOME/.config/grokbot-cpa/box.env}"
 # shellcheck disable=SC1090
 [ -f "$CFG" ] && . "$CFG"
-CPA_DIR=${CPA_DIR:-$HOME/cli-proxy-api}; TS_DIR=${TS_DIR:-/workspace/tailscale}
+CPA_DIR=${CPA_DIR:-$HOME/cli-proxy-api}; TS_DIR=${TS_DIR:-$HOME/tailscale}
 echo "will stop CPA watchdog/tunnel/CPA and Tailscale watchdog, remove ~/.config/autostart/{boot-services,cmcc-keepalive}.desktop"
 [ $PURGE = 1 ] && echo "will DELETE $CPA_DIR and $TS_DIR (including secrets, auths, tailscale state)"
 [ $YES = 1 ] || { echo "dry run; re-run with --yes"; exit 0; }

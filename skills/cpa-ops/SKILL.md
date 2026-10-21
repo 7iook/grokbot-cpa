@@ -5,7 +5,7 @@ description: Operate and troubleshoot a grokbot-cpa box-scheme install (CPA + na
 
 # CPA operations (box scheme)
 
-Settings: `~/.config/grokbot-cpa/box.env` (`CPA_DIR` default `~/cli-proxy-api`, `TS_DIR` default `/workspace/tailscale`,
+Settings: `~/.config/grokbot-cpa/box.env` (`CPA_DIR` default `~/cli-proxy-api`, `TS_DIR` default `~/tailscale`; only PERSIST_ROOT=/home/box survives reboots,
 `CF_HOSTNAME`, `CF_TUNNEL`, `CPA_PORT` 8317, `CPA_SOURCE_REPO`/`CPA_SOURCE_REF`, `LOG_TZ`).
 
 ## Hard rules
@@ -16,7 +16,7 @@ Settings: `~/.config/grokbot-cpa/box.env` (`CPA_DIR` default `~/cli-proxy-api`, 
 
 ## How it runs
 - Boot: XFCE autostart `~/.config/autostart/boot-services.desktop` → `~/boot-services.sh` → starts the CPA watchdog and
-  `$TS_DIR/ensure-up.sh` (which starts the Tailscale watchdog). Missing deps/binaries → `/workspace/cpa-bootstrap.sh`.
+  `$TS_DIR/ensure-up.sh` (which starts the Tailscale watchdog). Missing deps/binaries → `~/cpa-bootstrap.sh`.
 - `$CPA_DIR/watchdog.sh`: single instance (flock), runs CPA as its child, health checks, hang kill, backoff, detects VM
   pause/snapshot-resume and stale tunnel flows → refreshes the tunnel, rotates logs, relaunches the Tailscale watchdog.
 - `$TS_DIR/watchdog.sh`: restarts tailscaled when offline (≈20s), restores state backup, re-applies `tailscale serve`
@@ -26,7 +26,7 @@ Settings: `~/.config/grokbot-cpa/box.env` (`CPA_DIR` default `~/cli-proxy-api`, 
 
 ## Commands
 ```bash
-D=~/cli-proxy-api; T=/workspace/tailscale
+D=~/cli-proxy-api; T=~/tailscale
 $D/status.sh                     # overview (read-only)
 $D/healthcheck.sh                # check + self-heal; RESULT: OK|FIXED|FAILED
 $D/start-watchdog.sh             # start watchdog (starts CPA + tunnel), clears .watchdog-stopped
@@ -37,6 +37,8 @@ touch $D/.maintenance            # pause CPA restarts while watchdog keeps runni
 $D/upstream-check.sh             # auth files per provider (counts only)
 $D/refresh-model-catalog.sh      # save /v1/models to $D/models/models.json
 $D/claude-login.sh start|status|paste URL|stop
+$D/cf-setup.sh login|setup|status   # Cloudflare tunnel (cert in secrets/cf-cert.pem)
+~/grokbot-cpa-bin/selfcheck.sh   # PASS/FAIL for everything incl. persistent layout
 $D/install-plugins.sh [--force]  # (re)install plugins from box.env CPA_PLUGINS + 缓存保活 (no Lamplighter)
 bash $T/ensure-up.sh             # bring Tailscale up (TS_AUTHKEY=... $T/set-authkey.sh if state was lost)
 touch $T/.watchdog-stopped       # keep the Tailscale watchdog from being relaunched

@@ -1,27 +1,21 @@
 #!/usr/bin/env bash
-# grokbot-cpa installer (box scheme). Idempotent; re-running keeps config.yaml and secrets.
+# grokbot-cpa installer: EVERYTHING is installed by default (idempotent; keeps config.yaml, secrets, state).
 #
-#   ./install.sh [--with-cmcc] [--with-activity] [--no-start] [--no-plugins] [--reset-config]
+#   [CF_HOSTNAME=api.example.com] [TS_AUTHKEY=...] ./install.sh [--no-tunnel] [--no-tailscale] [--no-plugins]
+#        [--no-browsers] [--no-cmcc] [--no-activity] [--no-start] [--reset-config]
 #
-# What it does:
-#   1. box/install-box.sh: scripts -> $CPA_DIR, Tailscale scripts+binaries -> $TS_DIR, boot-services autostart,
-#      deps, CPA binary. CPA is BUILT FROM SOURCE by default:
-#        CPA_SOURCE_REPO=https://github.com/7iook/CLIProxyAPI.git  CPA_SOURCE_REF=feat/claude-setup-token-quota
-#      Official release binary instead:  CPA_BUILD=release CPA_VERSION=v8.0.29 ./install.sh
-#   2. config.yaml from templates/config.yaml.tmpl with a new random client API key + management secret
-#      (copies in $CPA_DIR/secrets/{client-api-key,management-secret}, mode 600) unless one already exists.
-#   3. starts the CPA watchdog (CPA + tunnel) and Tailscale (if an auth key / state exists).
-#   4. installs CPA plugins (box/cpa/install-plugins.sh: 缓存保活, Claude Keep Rolling, CPA Key Billing, 用量统计;
-#      list in box.env CPA_PLUGINS / CACHE_KEEPALIVE). Skip with --no-plugins.
-# Settings live in ~/.config/grokbot-cpa/box.env (see box/box.env.example); env vars override on first run.
-# Secrets you provide afterwards (never committed):
-#   Tailscale:  TS_AUTHKEY=tskey-auth-... $TS_DIR/set-authkey.sh
-#   Tunnel:     CF_HOSTNAME in box.env, then CF_TUNNEL_CREDENTIALS_FILE=<id>.json $CPA_DIR/set-tunnel-creds.sh
-#   Claude:     $CPA_DIR/claude-login.sh start
+# Order: box/install-box.sh (persistent layout under PERSIST_ROOT, apt deps, CPA built from 7iook/CLIProxyAPI
+# feat/claude-setup-token-quota, Tailscale binaries, boot autostart, keepalives, AdsPower + RoxyBrowser)
+#   -> config.yaml + secrets/{client-api-key,management-secret} -> CPA watchdog -> plugins (install-plugins.sh)
+#   -> Cloudflare tunnel (cf-setup.sh: prints a login URL if not authorized yet, then creates/reuses the tunnel)
+#   -> Tailscale with SSH (TS_AUTHKEY env -> set-authkey.sh, or existing state) -> keepalives -> selfcheck.sh
+# Release CPA binary instead of the source build: CPA_BUILD=release CPA_VERSION=v8.0.29 ./install.sh
+# Entry point for bots: AGENTS.md / skills/grokbot-setup/SKILL.md
 set -euo pipefail
 R="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ARGS=(); RESET=0; PLUGINS=1
-for a in "$@"; do case "$a" in --reset-config) RESET=1;; --no-plugins) PLUGINS=0;; -h|--help) sed -n '2,20p' "$0"; exit 0;; *) ARGS+=("$a");; esac; done
+ARGS=(); RESET=0; PLUGINS=1; TUNNEL=1; TSC=1; NOSKIP=()
+for a in "$@"; do case "$a" in --reset-config) RESET=1;; --no-plugins) PLUGINS=0; NOSKIP+=("$a");; --no-tunnel) TUNNEL=0; NOSKIP+=("$a");; --no-tailscale) TSC=0; NOSKIP+=("$a");;
+  --no-browsers|--no-cmcc|--no-activity) ARGS+=("$a"); NOSKIP+=("$a");; -h|--help) sed -n '2,14p' "$0"; exit 0;; *) ARGS+=("$a");; esac; done
 [ "$(uname -s)" = Linux ] || { echo "only Linux is supported" >&2; exit 1; }
 for c in curl tar openssl sed; do command -v "$c" >/dev/null || { echo "missing $c" >&2; exit 1; }; done
 command -v jq >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq jq; } >/dev/null
@@ -29,6 +23,7 @@ CFG="${GROKBOT_BOX_ENV:-$HOME/.config/grokbot-cpa/box.env}"
 bash "$R/box/install-box.sh" --no-start "${ARGS[@]}"
 # shellcheck disable=SC1090
 . "$CFG"
+PERSIST_ROOT=${PERSIST_ROOT:-$HOME}; CF_CONFIG_PATH="$CPA_DIR/cloudflared/config.yml"
 C="$CPA_DIR/config.yaml"
 if [ ! -s "$C" ] || [ $RESET = 1 ]; then
   K="sk-cpa-$(openssl rand -hex 24)"; M="$(openssl rand -hex 24)"
@@ -42,6 +37,16 @@ else echo "kept existing $C"; fi
 case " ${ARGS[*]-} " in *" --no-start "*) exit 0;; esac
 "$CPA_DIR/start-watchdog.sh"
 if [ $PLUGINS = 1 ]; then "$CPA_DIR/install-plugins.sh" || echo "WARNING: some plugins failed; re-run $CPA_DIR/install-plugins.sh"; fi
-if [ -s "$TS_DIR/authkey" ] || sudo -n test -s "$TS_DIR/tailscaled.state" 2>/dev/null; then bash "$TS_DIR/ensure-up.sh" || true
-else echo "Tailscale: TS_AUTHKEY=... $TS_DIR/set-authkey.sh"; fi
-echo; echo "next: $CPA_DIR/claude-login.sh start   |  $CPA_DIR/status.sh   |  $CPA_DIR/healthcheck.sh"
+if [ $TUNNEL = 1 ]; then
+  if [ -z "${CF_HOSTNAME:-}" ]; then echo "Cloudflare: set CF_HOSTNAME in box.env, then: $CPA_DIR/cf-setup.sh login && $CPA_DIR/cf-setup.sh setup"
+  elif [ -s "$CPA_DIR/secrets/cf-cert.pem" ] || [ -s "$CF_CONFIG_PATH" ]; then CF_CERT_WAIT=5 "$CPA_DIR/cf-setup.sh" setup || echo "WARNING: cf-setup failed"
+  else "$CPA_DIR/cf-setup.sh" login || true; echo ">>> after the user approved the URL run: $CPA_DIR/cf-setup.sh setup"; fi
+fi
+if [ $TSC = 1 ]; then
+  if [ -n "${TS_AUTHKEY:-}" ] && ! sudo -n test -s "$TS_DIR/tailscaled.state" 2>/dev/null; then TS_AUTHKEY="$TS_AUTHKEY" bash "$TS_DIR/set-authkey.sh" || true
+  elif [ -s "$TS_DIR/authkey" ] || sudo -n test -s "$TS_DIR/tailscaled.state" 2>/dev/null; then timeout 150 bash "$TS_DIR/ensure-up.sh" || true
+  else echo "Tailscale: TS_AUTHKEY=... $TS_DIR/set-authkey.sh"; fi
+fi
+"$BOOT_SERVICES" || true   # launches keepalive supervisors (and anything else not yet running)
+echo; "$PERSIST_ROOT/grokbot-cpa-bin/selfcheck.sh" "${NOSKIP[@]}" || true
+echo; echo "next: $CPA_DIR/claude-login.sh start  |  $PERSIST_ROOT/grokbot-cpa-bin/selfcheck.sh  |  $CPA_DIR/status.sh"

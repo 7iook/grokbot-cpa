@@ -5,6 +5,9 @@ description: Onboard a user onto CLIProxyAPI (CPA) on this Grok Bot box with the
 
 # CPA getting started (box scheme)
 
+> **For a full setup use `skills/grokbot-setup/SKILL.md` (primary entry point: one questionnaire, installs everything, self-check).**
+> This skill covers the CPA part only. Cloudflare default path: `cf-setup.sh login` (show the URL) → `cf-setup.sh setup`.
+
 Repo: `https://github.com/7iook/grokbot-cpa`. Everything is configured by `~/.config/grokbot-cpa/box.env`
 (template `box/box.env.example`) and installed by `./install.sh`. Ask **one question at a time**.
 
@@ -13,7 +16,7 @@ Repo: `https://github.com/7iook/grokbot-cpa`. Everything is configured by `~/.co
 1. Never put a secret in chat: Tailscale auth key, Cloudflare tunnel credentials, client API key, management
    secret, Claude credentials. Request them with the bot's **secure secret input** (env vars `TS_AUTHKEY`,
    `CF_TUNNEL_CREDENTIALS`). If the user pasted one in chat, ask them to rotate it.
-2. Detect what is already installed first (`~/cli-proxy-api`, `/workspace/tailscale`, `~/.config/grokbot-cpa/box.env`,
+2. Detect what is already installed first (`~/cli-proxy-api`, `~/tailscale`, `~/.config/grokbot-cpa/box.env`,
    `~/.config/autostart/*.desktop`) and do not overwrite an existing `config.yaml`, `secrets/`, `auths/` or tailscale state.
 3. Tell the user what you will run before running it. Open OAuth URLs in **this box's own browser**.
 4. Say the risk notice once before Claude login.
@@ -38,7 +41,7 @@ keepalives: `cmcc` (爱家移动云电脑 WebUI) and/or `box-activity` (keeps th
 ```bash
 git clone https://github.com/7iook/grokbot-cpa.git ~/grokbot-cpa   # or: git -C ~/grokbot-cpa pull --ff-only
 cd ~/grokbot-cpa
-CF_HOSTNAME=api.example.com TS_HOSTNAME=cpa-box ./install.sh --with-cmcc --with-activity   # drop flags not wanted
+CF_HOSTNAME=api.example.com TS_HOSTNAME=cpa-box ./install.sh   # everything on; add --no-cmcc / --no-activity / --no-browsers to skip
 ```
 - CPA is **built from source**: `CPA_SOURCE_REPO=https://github.com/7iook/CLIProxyAPI.git`,
   `CPA_SOURCE_REF=feat/claude-setup-token-quota` (Go is downloaded if missing). Release binary instead:
@@ -63,7 +66,7 @@ Opt out only if the user asks: `./install.sh --no-plugins`; the list is `CPA_PLU
 ### 4. Secrets
 ```bash
 CF_TUNNEL_CREDENTIALS="$CF_TUNNEL_CREDENTIALS" ~/cli-proxy-api/set-tunnel-creds.sh   # writes cloudflared/config.yml
-TS_AUTHKEY="$TS_AUTHKEY" /workspace/tailscale/set-authkey.sh                          # stores authkey (600), runs ensure-up
+TS_AUTHKEY="$TS_AUTHKEY" ~/tailscale/set-authkey.sh                          # stores authkey (600), runs ensure-up
 ~/cli-proxy-api/restart-tunnel.sh
 ```
 

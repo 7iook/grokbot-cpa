@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 BOX_ENV="${GROKBOT_BOX_ENV:-$HOME/.config/grokbot-cpa/box.env}"; [ -f "$BOX_ENV" ] && . "$BOX_ENV"   # grokbot-cpa: site settings (see box/box.env.example)
 # Shared helpers for ensure-up.sh / watchdog.sh. Never prints the auth key or state contents.
-D=${TS_DIR:-/workspace/tailscale}
+D=${TS_DIR:-$HOME/tailscale}
 TS=$D/tailscale; TSD=$D/tailscaled; SOCK=$D/tailscaled.sock; PIDFILE=$D/tailscaled.pid
 STATE=$D/tailscaled.state; BACKUP=$D/state-backup.json; KEY=$D/authkey
 LOG=$D/tailscaled.log; ELOG=$D/ensure-up.log; WLOG=$D/watchdog.log; HOST=${TS_HOSTNAME:-cpa-box}

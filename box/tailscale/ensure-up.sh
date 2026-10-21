@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Idempotent: make sure tailscaled (under sudo, files only in /workspace/tailscale) is running and cpa-box is online.
+# Idempotent: make sure tailscaled (under sudo, files only in $TS_DIR) is running and cpa-box is online.
 # Single instance: if another ensure-up is already running, exit immediately (it is doing the work).
 # Bounded: the whole run (while holding the lock) is capped at ENSURE_CAP s (default 90); every CLI call has a timeout.
 # Never prints the auth key or state contents. Never runs `up` while BackendState=Running.
@@ -53,10 +53,10 @@ attempt() { # returns 0 healthy, 1 failed hard, 2 wants a restart (reason in $WH
   done
   if ! tsd_pids >/dev/null; then WHY="tailscaled exited (state=$st)"; return 2; fi
   case "$st" in
-    Running) [ "$(ts debug prefs 2>/dev/null | jq -r '.RunSSH' 2>/dev/null)" = true ] || ts set --ssh >/dev/null 2>&1 ;;
+    Running) if [ "${TS_SSH:-1}" = 1 ]; then [ "$(ts debug prefs 2>/dev/null | jq -r '.RunSSH' 2>/dev/null)" = true ] || ts set --ssh >/dev/null 2>&1; fi ;;
     NeedsLogin|Stopped|NeedsMachineAuth)
       log "BackendState=$st -> tailscale up"
-      sudo -n timeout -k 2 25 "$TS" --socket="$SOCK" up --auth-key="file:$KEY" --hostname="$HOST" --ssh --accept-dns=false 2>&1 \
+      sudo -n timeout -k 2 25 "$TS" --socket="$SOCK" up --auth-key="file:$KEY" --hostname="$HOST" --ssh="$([ "${TS_SSH:-1}" = 1 ] && echo true || echo false)" --accept-dns=false 2>&1 \
         | grep -v -i 'auth' >>"$ELOG" ;;
     none) # process exists but does not answer
       if [ "$(tsd_min_age)" -ge "$MIN_KILL_AGE" ]; then WHY="tailscaled not answering"; return 2; fi
