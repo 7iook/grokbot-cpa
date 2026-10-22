@@ -35,7 +35,7 @@ build_from_source() {
   fi
   local rev; rev=$(git -C "$CPA_SRC_DIR" rev-parse --short HEAD)
   mkdir -p "$CPA_DIR/bin"
-  (cd "$CPA_SRC_DIR" && CGO_ENABLED=0 "$GO" build -trimpath \
+  (cd "$CPA_SRC_DIR" && CGO_ENABLED=1 "$GO" build -trimpath \
     -ldflags "-s -w -X main.Version=${CPA_VERSION}-custom -X main.Commit=$rev -X main.BuildDate=$(date -u +%FT%TZ)" \
     -o "$CPA_DIR/bin/cli-proxy-api.tmp" ./cmd/server) &&
   mv -f "$CPA_DIR/bin/cli-proxy-api.tmp" "$CPA_DIR/bin/cli-proxy-api" && echo "binary built from $CPA_SOURCE_REPO@$CPA_SOURCE_REF ($rev)"

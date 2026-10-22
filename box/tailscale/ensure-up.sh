@@ -36,7 +36,7 @@ attempt() { # returns 0 healthy, 1 failed hard, 2 wants a restart (reason in $WH
     if [ "$ssz" -lt 1000 ] && [ -s "$BACKUP" ]; then
       sudo -n install -m 600 -o root -g root "$BACKUP" "$STATE"; log "restored state from backup (state was ${ssz} bytes)"
     fi
-    mode=userspace; [ -c /dev/net/tun ] && [ ! -f "$D/force-userspace" ] && mode=kernel
+    mode=userspace; [ -c /dev/net/tun ] && [ ! -f "$D/force-userspace" ] && ! pgrep -x tailscaled >/dev/null && mode=kernel   # another (system) tailscaled owns the TUN -> userspace
     if start_tsd $mode; then log "tailscaled started ($mode)"
     elif [ $mode = kernel ] && [ "$(left)" -gt 15 ]; then
       log "kernel TUN start failed; falling back to userspace"; kill_tsd "kernel start failed" force "$ELOG"

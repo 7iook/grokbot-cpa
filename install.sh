@@ -35,6 +35,9 @@ if [ ! -s "$C" ] || [ $RESET = 1 ]; then
 else echo "kept existing $C"; fi
 [ -s "$CPA_DIR/secrets/client-api-key" ] || echo "WARNING: $CPA_DIR/secrets/client-api-key missing (healthcheck needs it; copy one api-keys entry there, mode 600)"
 case " ${ARGS[*]-} " in *" --no-start "*) exit 0;; esac
+mkdir -p "$TS_DIR"
+if [ $TSC = 0 ]; then touch "$TS_DIR/.watchdog-stopped"; echo "Tailscale skipped (--no-tailscale): $TS_DIR/.watchdog-stopped set, watchdogs will not start it"
+else rm -f "$TS_DIR/.watchdog-stopped"; fi
 "$CPA_DIR/start-watchdog.sh"
 if [ $PLUGINS = 1 ]; then "$CPA_DIR/install-plugins.sh" || echo "WARNING: some plugins failed; re-run $CPA_DIR/install-plugins.sh"; fi
 if [ $TUNNEL = 1 ]; then

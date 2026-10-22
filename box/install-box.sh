@@ -27,7 +27,7 @@ for f in "$R"/box/tailscale/*.sh; do install -m 755 "$f" "$TS_DIR/"; done; chmod
 install -m 755 "$R/box/boot-services.sh" "$BOOT_SERVICES"; install -m 755 "$R/box/cpa-bootstrap.sh" "$CPA_BOOTSTRAP"
 echo "${CPA_VERSION:-v8.0.29}" > "$CPA_DIR/VERSION"
 # system packages are not persistent: install now, boot-services.sh re-ensures them after every reboot
-miss=""; for p in $BOOT_APT_PKGS; do dpkg -s "$p" >/dev/null 2>&1 || miss="$miss $p"; done
+miss=""; for p in $BOOT_APT_PKGS; do dpkg -s "$p" >/dev/null 2>&1 || dpkg -s "${p}t64" >/dev/null 2>&1 || miss="$miss $p"; done
 # shellcheck disable=SC2086
 [ -z "$miss" ] || { sudo -n timeout 300 apt-get update -qq; sudo -n DEBIAN_FRONTEND=noninteractive timeout 900 apt-get install -y -qq $miss; } || echo "WARNING: apt install failed:$miss"
 # tailscale static binaries (kept in $TS_DIR so they survive a box reset)

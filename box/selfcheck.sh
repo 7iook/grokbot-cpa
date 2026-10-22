@@ -19,7 +19,7 @@ for v in CPA_DIR TS_DIR BOOT_SERVICES CPA_BOOTSTRAP ADSPOWER_DIR ROXY_DIR ACTIVI
   case "$p" in "$PERSIST_ROOT"/*) ok "$v under PERSIST_ROOT";; *) bad "$v=$p is outside PERSIST_ROOT (lost on reboot)";; esac
 done
 for b in "$CPA_BIN" "$CF_BIN" "$TS_DIR/tailscaled"; do case "$(readlink -f "$b" 2>/dev/null || echo "$b")" in "$PERSIST_ROOT"/*) ;; *) bad "binary $b not under PERSIST_ROOT";; esac; done
-miss=""; for p in ${BOOT_APT_PKGS:-}; do dpkg -s "$p" >/dev/null 2>&1 || miss="$miss $p"; done
+miss=""; for p in ${BOOT_APT_PKGS:-}; do dpkg -s "$p" >/dev/null 2>&1 || dpkg -s "${p}t64" >/dev/null 2>&1 || miss="$miss $p"; done
 [ -z "$miss" ] && ok "boot apt packages present" || warn "apt packages missing (boot-services.sh reinstalls):$miss"
 
 echo "== CPA"
@@ -31,8 +31,8 @@ chk "secrets dir mode 700" test "$(stat -c %a "$CPA_DIR/secrets" 2>/dev/null)" =
 if [ -z "${SKIP[plugins]:-}" ]; then
   pl=$(curl -s -m 10 -H "Authorization: Bearer $MS" "http://$CPA_HOST:$CPA_PORT/v0/management/plugins")
   for id in ${CPA_PLUGINS:-claude-keep-rolling cpa-key-billing usage-dashboard-zduu} claude-cache-keepalive; do id=${id%@*}
-    e=$(printf '%s' "$pl" | jq -r --arg id "$id" '[.. | objects | select(.id? == $id)][0] | if . == null then "missing" else (.enabled // "unknown" | tostring) end' 2>/dev/null)
-    case "$e" in true) ok "plugin $id enabled";; missing|"") bad "plugin $id not installed";; *) bad "plugin $id enabled=$e";; esac
+    e=$(printf '%s' "$pl" | jq -r --arg id "$id" '[.. | objects | select(.id? == $id)][0] | if . == null then "missing" elif (.registered == false) then "not-loaded" else (.enabled // "unknown" | tostring) end' 2>/dev/null)
+    case "$e" in true) ok "plugin $id enabled + loaded";; not-loaded) bad "plugin $id not loaded (CPA built without cgo? restart: stop.sh)";; missing|"") bad "plugin $id not installed";; *) bad "plugin $id enabled=$e";; esac
   done
   printf '%s' "$pl" | jq -e '[.. | objects | select(.id? == "lamplighter")] | length == 0' >/dev/null 2>&1 && ok "lamplighter not installed" || warn "lamplighter is installed"
 fi
