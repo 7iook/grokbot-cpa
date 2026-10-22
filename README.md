@@ -19,9 +19,10 @@ uninstall.sh            stop + remove autostart (--purge deletes install dirs)
 box/box.env.example     all settings -> ~/.config/grokbot-cpa/box.env
 box/cpa/                CPA watchdog v2 + start/stop/status/healthcheck/tunnel/claude-login/... -> $CPA_DIR
 box/tailscale/          ensure-up.sh, watchdog.sh, lib.sh, set-authkey.sh -> $TS_DIR
-box/boot-services.sh    boot hook (XFCE autostart; no systemd/cron on the box) -> ~/boot-services.sh
+box/boot-services.sh    boot hook -> ~/boot-services.sh (fired by ~/.profile/~/.bashrc hook; waits for home restore)
+box/install-hooks.sh    writes/checks the marked boot hook blocks in ~/.profile + ~/.bashrc
 box/cpa-bootstrap.sh    deps + CPA binary (source build or release) after a box reset -> ~/cpa-bootstrap.sh
-box/autostart/          .desktop templates
+box/autostart/          .desktop templates (compat only: XDG autostart does not fire on a Grok Bot box)
 box/browsers/          install-adspower.sh, install-roxy.sh (extracted .deb under PERSIST_ROOT)
 box/selfcheck.sh       PASS/FAIL self-check -> ~/grokbot-cpa-bin/
 keepalive/cmcc/         installs github.com/1936-zero/cmcc-cloud-alive WebUI + supervisor (default on; --no-cmcc)
@@ -78,9 +79,12 @@ logs in `$CPA_DIR/logs/` and `$TS_DIR/*.log`. See `skills/cpa-ops/SKILL.md`.
 
 ---
 
+## Boot trigger
+Boot trigger on a Grok Bot box: there is no systemd/cron and the desktop is only a window manager, so XDG autostart (`~/.config/autostart/*.desktop`, kept for compat) does **not** fire. The chain is: bot wakes → first agent Shell → exec-daemon initializes it with `bash -ilc` → `~/.profile`/`~/.bashrc` → marked `grokbot-cpa boot hook` block (written by `box/install-hooks.sh`) → `~/boot-services.sh` (waits for the home restore `/tmp/sand-copy-in-status.json`, then starts only supervisors whose lock is free). Optional fallback: Grok Bot routine `@every 10m` → `bash ~/boot-services.sh`. After a VM swap the SSH host key changes (`ssh-keygen -R <ip>`).
+
 ## 中文
 
-在 Grok Bot 电脑上部署 CPA：命名 Cloudflare 隧道 + Tailscale + 两个互相拉起的看门狗 + 开机自启（XFCE autostart）+ 可选保活。
+在 Grok Bot 电脑上部署 CPA：命名 Cloudflare 隧道 + Tailscale + 两个互相拉起的看门狗 + 开机自启（`~/.profile`/`~/.bashrc` 钩子：bot 唤醒 → 首个 Shell 以 `bash -ilc` 初始化 → 钩子 → `boot-services.sh`；XDG autostart 在此类 VM 上不触发，仅保留兼容；可选兜底 routine `@every 10m` 执行 `bash ~/boot-services.sh`；换 VM 后 SSH 主机密钥会变）+ 可选保活。
 CPA 默认从 `7iook/CLIProxyAPI` 的 `feat/claude-setup-token-quota` 分支源码编译（`CPA_BUILD=release` 改用官方发行版）。
 
 - 配置：`~/.config/grokbot-cpa/box.env`（模板 `box/box.env.example`），不放任何密钥。

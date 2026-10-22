@@ -15,13 +15,17 @@ Settings: `~/.config/grokbot-cpa/box.env` (`CPA_DIR` default `~/cli-proxy-api`, 
 3. Daemons are started with a clean environment (`env -i`) on purpose so agent-session secrets never leak into them.
 
 ## How it runs
-- Boot: XFCE autostart `~/.config/autostart/boot-services.desktop` → `~/boot-services.sh` → starts the CPA watchdog and
+- After a VM swap/reset the box gets a new SSH host key (Tailscale SSH): clients must drop the old known_hosts entry
+  (`ssh-keygen -R <ip>`), the tailnet IP/name may change (old device stays offline as a duplicate).
+- Boot trigger on a Grok Bot box: there is no systemd/cron and the desktop is only a window manager, so XDG autostart (`~/.config/autostart/*.desktop`, kept for compat) does **not** fire. The chain is: bot wakes → first agent Shell → exec-daemon initializes it with `bash -ilc` → `~/.profile`/`~/.bashrc` → marked `grokbot-cpa boot hook` block (written by `box/install-hooks.sh`) → `~/boot-services.sh` (waits for the home restore `/tmp/sand-copy-in-status.json`, then starts only supervisors whose lock is free).
+  Optional fallback: a Grok Bot routine `@every 10m` running `bash ~/boot-services.sh`. Check hooks: `~/grokbot-cpa-bin/install-hooks.sh --check`.
+- `~/boot-services.sh` starts the CPA watchdog and
   `$TS_DIR/ensure-up.sh` (which starts the Tailscale watchdog). Missing deps/binaries → `~/cpa-bootstrap.sh`.
 - `$CPA_DIR/watchdog.sh`: single instance (flock), runs CPA as its child, health checks, hang kill, backoff, detects VM
   pause/snapshot-resume and stale tunnel flows → refreshes the tunnel, rotates logs, relaunches the Tailscale watchdog.
 - `$TS_DIR/watchdog.sh`: restarts tailscaled when offline (≈20s), restores state backup, re-applies `tailscale serve`
   of `CPA_PORT`, relaunches `boot-services.sh` if the CPA watchdog is gone.
-- Keepalives (optional): `~/cmcc-cloud-alive/supervise.sh` (WebUI 127.0.0.1:28080, own autostart entry) and
+- Keepalives (optional): `~/cmcc-cloud-alive/supervise.sh` (WebUI 127.0.0.1:28080, started by boot-services.sh) and
   `~/box-activity-test/ctl.sh start-all|stop|status` (browse loop + 30s monitor CSV).
 
 ## Commands

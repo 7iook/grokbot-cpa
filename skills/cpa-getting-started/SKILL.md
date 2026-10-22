@@ -82,6 +82,6 @@ Give the user: base URL `https://$CF_HOSTNAME` (tailnet: `http://<ts-host>:8317`
 ### 7. Routine
 Create an hourly routine: run `~/cli-proxy-api/healthcheck.sh`; stay silent on `RESULT: OK|FIXED`; on `RESULT: FAILED`
 notify the user with the output and the last 30 lines of `~/cli-proxy-api/logs/watchdog.log`. Boot recovery itself is
-handled by `boot-services.sh` (autostart) and the two watchdogs, which relaunch each other.
+handled by `boot-services.sh` (shell hooks in `~/.profile`/`~/.bashrc`, fired by the first agent Shell after a wake) and the two watchdogs, which relaunch each other.
 
 ### 8. Point at `cpa-ops` for day-2 operations.

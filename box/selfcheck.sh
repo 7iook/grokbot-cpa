@@ -41,6 +41,8 @@ echo "== watchdogs + boot"
 chk "CPA watchdog running" wd_running
 chk "CPA watchdog heartbeat < 120s" test "$(file_age "$WD_HEARTBEAT")" -lt 120
 chk "boot-services.sh present" test -x "$BOOT_SERVICES"
+chk "boot hook in ~/.profile" grep -qF "# >>> grokbot-cpa boot hook >>>" "$HOME/.profile"
+chk "boot hook in ~/.bashrc" grep -qF "# >>> grokbot-cpa boot hook >>>" "$HOME/.bashrc"
 chk "autostart boot-services.desktop" grep -q "$BOOT_SERVICES" "$HOME/.config/autostart/boot-services.desktop"
 
 if [ -z "${SKIP[tunnel]:-}" ]; then echo "== Cloudflare tunnel"

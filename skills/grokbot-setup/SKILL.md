@@ -37,7 +37,7 @@ cd ~/grokbot-cpa
 CF_HOSTNAME=<1> TS_HOSTNAME=<4> TS_AUTHKEY="$TS_AUTHKEY" ./install.sh        # + --no-* only if asked
 ```
 `install.sh` does, in order: persistent layout + apt deps → CPA built from `7iook/CLIProxyAPI@feat/claude-setup-token-quota`
-→ boot autostart → keepalives (cmcc, box-activity) → AdsPower + RoxyBrowser → config.yaml + secrets → CPA watchdog
+→ boot hooks in `~/.profile`+`~/.bashrc` (+ .desktop for compat) → keepalives (cmcc, box-activity) → AdsPower + RoxyBrowser → config.yaml + secrets → CPA watchdog
 → plugins (缓存保活, Claude Keep Rolling, API Key Billing, 用量统计; never Lamplighter) → Cloudflare (`cf-setup.sh login`
 prints the authorize URL if not authorized) → Tailscale up **with SSH** → boot-services (keepalive supervisors) → selfcheck.
 
@@ -48,6 +48,11 @@ Then:
 2. Claude: `~/cli-proxy-api/claude-login.sh start` → open the URL in **this box's browser** → `claude-login.sh status` = LOGGED_IN.
 3. If a plugin failed: `~/cli-proxy-api/install-plugins.sh` then `~/cli-proxy-api/stop.sh` (watchdog restarts CPA).
 4. `~/grokbot-cpa-bin/selfcheck.sh` (same `--no-*` flags) until `SELFCHECK: PASS`; fix each FAIL line and re-run.
+5. Optional (offer it): a Grok Bot routine `@every 10m` whose prompt is "run `bash ~/boot-services.sh` in Shell; reply only on error".
+   Not required: Boot trigger on a Grok Bot box: there is no systemd/cron and the desktop is only a window manager, so XDG autostart (`~/.config/autostart/*.desktop`, kept for compat) does **not** fire. The chain is: bot wakes → first agent Shell → exec-daemon initializes it with `bash -ilc` → `~/.profile`/`~/.bashrc` → marked `grokbot-cpa boot hook` block (written by `box/install-hooks.sh`) → `~/boot-services.sh` (waits for the home restore `/tmp/sand-copy-in-status.json`, then starts only supervisors whose lock is free).
+   A reboot only happens when the bot is woken, and its first Shell fires the hook; the routine covers wakes without a Shell call.
+6. After a VM swap the SSH host key changes and the tailnet name may get a `-1` suffix (old device offline): tell the user to
+   remove the offline duplicate in the Tailscale admin and clients to `ssh-keygen -R <ip>`.
 
 ## 3. Report to the user
 Public base URL `https://<CF_HOSTNAME>`, tailnet `http://<TS_HOSTNAME>:8317`, where the client key is
@@ -59,4 +64,4 @@ Public base URL `https://<CF_HOSTNAME>`, tailnet `http://<TS_HOSTNAME>:8317`, wh
 auths/, plugins/, cloudflared/{config.yml,<id>.json}, logs/) · `tailscale/` (binaries, tailscaled.state, authkey) ·
 `boot-services.sh`, `cpa-bootstrap.sh` · `.local/go` · `build/cpa` · `adspower/`, `roxybrowser/` (+ `~/.config/adspower_global`,
 `~/.config/RoxyBrowser` profiles) · `cmcc-cloud-alive/` · `box-activity-test/` · `grokbot-cpa-bin/selfcheck.sh` ·
-`.config/grokbot-cpa/box.env` · `.config/autostart/{boot-services,cmcc-keepalive}.desktop`.
+`.config/grokbot-cpa/box.env` · boot hook blocks in `.profile` + `.bashrc` · `.config/autostart/{boot-services,cmcc-keepalive}.desktop` (compat only).

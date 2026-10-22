@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Deploy the grokbot-cpa box scheme: CPA (built from the 7iook/CLIProxyAPI fork by default) + named cloudflared
-# tunnel supervised by watchdog.sh, Tailscale with its own watchdog (the two relaunch each other), boot via XFCE
-# autostart (no systemd/cron on a Grok Bot box), optional keepalives. Idempotent; keeps existing config/secrets.
+# tunnel supervised by watchdog.sh, Tailscale with its own watchdog (the two relaunch each other), boot via shell hooks
+# in ~/.profile/~/.bashrc (first agent Shell after wake; no systemd/cron/XDG autostart on a Grok Bot box), keepalives. Idempotent; keeps existing config/secrets.
 #   ./box/install-box.sh [--no-cmcc] [--no-activity] [--no-browsers] [--no-start]   (everything is ON by default)
 # Settings: ~/.config/grokbot-cpa/box.env (created from box/box.env.example; env vars override on first run).
 set -euo pipefail
@@ -37,6 +37,8 @@ if [ ! -x "$TS_DIR/tailscaled" ]; then
   curl -fsSL "https://pkgs.tailscale.com/stable/$F" | tar xz --strip-components=1 -C "$TS_DIR" --wildcards '*/tailscale' '*/tailscaled'
   echo "tailscale installed in $TS_DIR"
 fi
+# boot trigger: shell hooks in ~/.profile + ~/.bashrc (agent Shell runs `bash -ilc`); .desktop kept for compat only
+bash "$R/box/install-hooks.sh"
 mkdir -p "$HOME/.config/autostart"
 sed "s#@HOME@#$HOME#g; s#@BOOT_SERVICES@#$BOOT_SERVICES#g" "$R/box/autostart/boot-services.desktop" > "$HOME/.config/autostart/boot-services.desktop"
 if [ $WITH_CMCC = 1 ]; then bash "$R/keepalive/cmcc/install.sh"
@@ -44,7 +46,7 @@ if [ $WITH_CMCC = 1 ]; then bash "$R/keepalive/cmcc/install.sh"
 if [ $WITH_ACT = 1 ]; then mkdir -p "$ACTIVITY_DIR"; for f in "$R"/keepalive/box-activity/*.sh; do install -m 755 "$f" "$ACTIVITY_DIR/"; done
   echo "box-activity installed in $ACTIVITY_DIR (start: $ACTIVITY_DIR/ctl.sh start-all)"; fi
 mkdir -p "$PERSIST_ROOT/grokbot-cpa-bin"
-for f in "$R"/box/browsers/*.sh "$R"/box/selfcheck.sh; do install -m 755 "$f" "$PERSIST_ROOT/grokbot-cpa-bin/"; done
+for f in "$R"/box/browsers/*.sh "$R"/box/selfcheck.sh "$R"/box/install-hooks.sh; do install -m 755 "$f" "$PERSIST_ROOT/grokbot-cpa-bin/"; done
 if [ $WITH_BR = 1 ]; then bash "$R/box/browsers/install-adspower.sh" || echo "WARNING: AdsPower install failed"
   bash "$R/box/browsers/install-roxy.sh" || echo "WARNING: RoxyBrowser install failed"; fi
 # deps + CPA binary (source build by default); BOOT_SERVICES_CHILD=1 -> install only, start below
