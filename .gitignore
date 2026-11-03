@@ -36,3 +36,9 @@ chrome-profile/
 # box scheme runtime
 .watchdog-stopped
 .maintenance
+
+# 3x-ui runtime (db, generated secrets, tunnel credentials)
+x-ui.db*
+*.heartbeat
+*.lock
+cloudflared/*.json

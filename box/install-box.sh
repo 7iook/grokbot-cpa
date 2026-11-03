@@ -13,7 +13,8 @@ for a in "$@"; do case "$a" in --with-cmcc|--with-activity|--with-browsers) ;; -
 mkdir -p "${CFG%/*}"
 if [ ! -f "$CFG" ]; then
   cp "$R/box/box.env.example" "$CFG"
-  for v in CPA_DIR CPA_PORT CF_TUNNEL CF_HOSTNAME TS_DIR TS_HOSTNAME LOG_TZ CPA_BUILD CPA_SOURCE_REPO CPA_SOURCE_REF CPA_VERSION; do
+  for v in CPA_DIR CPA_PORT CF_TUNNEL CF_HOSTNAME TS_DIR TS_HOSTNAME LOG_TZ CPA_BUILD CPA_SOURCE_REPO CPA_SOURCE_REF CPA_VERSION \
+    XUI_DIR XUI_PANEL_PORT XUI_SUB_PORT XUI_NODE_PORT XUI_CF_HOSTNAME XUI_SUB_HOSTNAME XUI_NODE_HOSTNAME BOOT_SWAP_SIZE; do
     [ -n "${!v:-}" ] && sed -i -E "s#^$v=.*#$v=\"${!v}\"#" "$CFG"; done
   echo "created $CFG"
 fi

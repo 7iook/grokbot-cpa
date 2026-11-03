@@ -1,6 +1,6 @@
 ---
 name: cpa-ops
-description: Operate and troubleshoot a grokbot-cpa box-scheme install (CPA + named tunnel + Tailscale watchdogs, boot autostart, keepalives): status, start/stop, logs, tunnel restart, upgrades, Anthropic 403. Never print secrets.
+description: Operate and troubleshoot a grokbot-cpa box-scheme install (CPA + named tunnel + Tailscale watchdogs, 3X-UI, boot autostart + swap, keepalives): status, start/stop, logs, tunnel restart, upgrades, memory pressure, Anthropic 403. Never print secrets.
 ---
 
 # CPA operations (box scheme)
@@ -10,7 +10,7 @@ Settings: `~/.config/grokbot-cpa/box.env` (`CPA_DIR` default `~/cli-proxy-api`, 
 
 ## Hard rules
 1. Never print: `$CPA_DIR/secrets/*` (client-api-key, management-secret, …), `$CPA_DIR/auths/*`, `$CPA_DIR/config.yaml`
-   key lines, `$CPA_DIR/cloudflared/*.json`, `$TS_DIR/authkey`, `$TS_DIR/tailscaled.state`.
+   key lines, `$CPA_DIR/cloudflared/*.json`, `$TS_DIR/authkey`, `$TS_DIR/tailscaled.state`, `~/3x-ui/secrets/*`, `~/3x-ui/cloudflared/*.json`.
 2. Use the scripts; do not `kill` processes ad hoc (the watchdogs would fight you).
 3. Daemons are started with a clean environment (`env -i`) on purpose so agent-session secrets never leak into them.
 
@@ -25,6 +25,13 @@ Settings: `~/.config/grokbot-cpa/box.env` (`CPA_DIR` default `~/cli-proxy-api`, 
   pause/snapshot-resume and stale tunnel flows → refreshes the tunnel, rotates logs, relaunches the Tailscale watchdog.
 - `$TS_DIR/watchdog.sh`: restarts tailscaled when offline (≈20s), restores state backup, re-applies `tailscale serve`
   of `CPA_PORT`, relaunches `boot-services.sh` if the CPA watchdog is gone.
+- Health checks only count once the service answered after a start, or after a 90s start grace; and while
+  MemAvailable < 1024 MB (`MEM_GUARD_MB`) no watchdog hang-kills (CPA, Tailscale "unanswering", 3X-UI, cmcc) — it logs
+  "memory pressure" instead. If you see that: find the memory hog (`ps -eo pid,rss,comm --sort=-rss | head`); do not kill
+  other apps (AdsPower…) without the user's OK. `boot-services.sh` keeps an 8G `/swapfile` enabled (`BOOT_SWAP_SIZE`).
+- `~/3x-ui/watchdog.sh`: x-ui as child (crash/hang restart, backoff), its own tunnel `grokbot-3xui` (dead / not ready /
+  public 5xx / VM resume → restart), daily DB backup to `~/3x-ui/backups/` (keep 7). Started by boot-services, relaunched
+  by the Tailscale watchdog. Its TERM handler stops x-ui too (a restart is a short proxy outage).
 - Keepalives (optional): `~/cmcc-cloud-alive/supervise.sh` (WebUI 127.0.0.1:28080, started by boot-services.sh) and
   `~/box-activity-test/ctl.sh start-all|stop|status` (browse loop + 30s monitor CSV).
 
@@ -46,9 +53,15 @@ $D/cf-setup.sh login|setup|status   # Cloudflare tunnel (cert in secrets/cf-cert
 $D/install-plugins.sh [--force]  # (re)install plugins from box.env CPA_PLUGINS + 缓存保活 (no Lamplighter)
 bash $T/ensure-up.sh             # bring Tailscale up (TS_AUTHKEY=... $T/set-authkey.sh if state was lost)
 touch $T/.watchdog-stopped       # keep the Tailscale watchdog from being relaunched
+X=~/3x-ui
+$X/status.sh                     # watchdog, x-ui version, xray, the 3 ports, last backups, tunnel
+$X/stop.sh / $X/start.sh         # stop everything 3x-ui (sets .watchdog-stopped) / start the watchdog
+$X/tunnel.sh restart             # 3x-ui tunnel only;  $X/cf-setup.sh setup|status|creds <id>.json
+$X/api.py get /panel/api/inbounds/list   # panel API with CSRF login (never prints the login)
+bash ~/grokbot-cpa/box/3x-ui/install.sh  # re-apply settings / upgrade to XUI_VERSION (DB backed up first)
 ```
 Logs: `$D/logs/{watchdog.log,cpa.out,tunnel.log,boot.log}`, `$T/{ensure-up.log,watchdog.log,tailscaled.log}`,
-`~/cmcc-cloud-alive/logs/`, `~/box-activity-test/logs/`.
+`~/3x-ui/logs/{watchdog.log,x-ui.out,tunnel.log}`, `~/cmcc-cloud-alive/logs/`, `~/box-activity-test/logs/`.
 
 ## Public 530 / 502
 Cloudflare could not reach a live connector. Usually the box was paused/restored and the tunnel's edge flows died:

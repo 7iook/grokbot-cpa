@@ -1,0 +1,15 @@
+# cloudflared config for the 3x-ui tunnel, rendered by $XUI_DIR/cf-setup.sh (box/3x-ui/cf-setup.sh).
+# Locally managed ingress: panel / subscription / node (VLESS-WS) -> the 3 local ports. An ingress pair whose
+# hostname is empty in box.env is dropped. Never commit the rendered file's credentials JSON.
+tunnel: @TUNNEL_ID@
+credentials-file: @CRED_FILE@
+protocol: http2
+no-autoupdate: true
+ingress:
+  - hostname: @PANEL_HOSTNAME@
+    service: http://127.0.0.1:@PANEL_PORT@
+  - hostname: @SUB_HOSTNAME@
+    service: http://127.0.0.1:@SUB_PORT@
+  - hostname: @NODE_HOSTNAME@
+    service: http://127.0.0.1:@NODE_PORT@
+  - service: http_status:404

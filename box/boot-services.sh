@@ -29,6 +29,17 @@ miss=""; for p in ${BOOT_APT_PKGS:-curl jq openssh-client}; do dpkg -s "$p" >/de
 if [ -n "$miss" ]; then log "apt missing:$miss -> installing"
   { sudo -n timeout 300 apt-get update -qq && sudo -n DEBIAN_FRONTEND=noninteractive timeout 600 apt-get install -y -qq $miss; } >>"$LOG" 2>&1 9>&- || log "apt install failed"
 fi
+# Swap (added 2026-11-03): the box has 16G RAM and no swap; AdsPower filling it starved CPA into a watchdog kill loop.
+# /swapfile is root-owned system state that does not survive a VM swap, so (re)create and enable it on every wake.
+# Opt-out: BOOT_SWAP_SIZE=0 in box.env. Runs detached so it never delays the services below.
+SWAP_FILE=${BOOT_SWAP_FILE:-/swapfile}; SWAP_SIZE=${BOOT_SWAP_SIZE:-8G}
+if [ "$SWAP_SIZE" != 0 ] && ! grep -q "^$SWAP_FILE " /proc/swaps 2>/dev/null && sudo -n true 2>/dev/null; then
+  "${CLEAN_ENV[@]}" SWAP_FILE="$SWAP_FILE" SWAP_SIZE="$SWAP_SIZE" LOG="$LOG" setsid -f /bin/bash -c '
+    ts() { TZ=Asia/Shanghai date "+%F %T %Z"; }
+    { [ -f "$SWAP_FILE" ] || sudo -n fallocate -l "$SWAP_SIZE" "$SWAP_FILE"; } &&
+    sudo -n chmod 600 "$SWAP_FILE" && { sudo -n swapon "$SWAP_FILE" 2>/dev/null || { sudo -n mkswap "$SWAP_FILE" >/dev/null && sudo -n swapon "$SWAP_FILE"; }; } &&
+      echo "$(ts) swap $SWAP_FILE ($SWAP_SIZE) enabled" >>"$LOG" || echo "$(ts) swap $SWAP_FILE setup FAILED" >>"$LOG"' </dev/null >/dev/null 2>&1 9>&-
+fi
 if [ -d "$CPA_DIR" ] && [ ! -f "$CPA_DIR/.watchdog-stopped" ] && free "$CPA_DIR/.watchdog.lock"; then
   # after a reset apt packages or the binary may be missing -> bootstrap installs them (it does not start anything here)
   need=""; for c in curl jq flock pgrep ss; do command -v "$c" >/dev/null || need="$need $c"; done
@@ -50,4 +61,11 @@ if [ -x "$AD/ctl.sh" ] && [ ! -f "$AD/.stop" ] && free "$AD/.supervise.lock"; th
 fi
 CD=${CMCC_DIR:-$HOME/cmcc-cloud-alive}
 [ -x "$CD/supervise.sh" ] && [ ! -f "$CD/.stop" ] && free "$CD/.supervise.lock" && "${CLEAN_ENV[@]}" setsid -f /bin/bash "$CD/supervise.sh" >/dev/null 2>&1 </dev/null 9>&-
+# 3x-ui (optional, box/3x-ui -> $XUI_DIR): its watchdog supervises x-ui + xray + its own cloudflared tunnel.
+# Opt-out: touch $XUI_DIR/.watchdog-stopped (stop.sh does it; start.sh clears it).
+XD=${XUI_DIR:-$HOME/3x-ui}
+if [ -x "$XD/watchdog.sh" ] && [ -x "$XD/app/x-ui" ] && [ ! -f "$XD/.watchdog-stopped" ] && free "$XD/.watchdog.lock"; then
+  mkdir -p "$XD/logs"; "${CLEAN_ENV[@]}" setsid -f /bin/bash "$XD/watchdog.sh" >>"$XD/logs/watchdog.log" 2>&1 </dev/null 9>&-
+  log "3x-ui watchdog launched"
+fi
 exit 0

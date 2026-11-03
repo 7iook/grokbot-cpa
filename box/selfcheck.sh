@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # grokbot-cpa self-check: PASS/FAIL per component + summary. Read-only (starts nothing), never prints secrets.
-#   selfcheck.sh [--no-tunnel] [--no-tailscale] [--no-browsers] [--no-cmcc] [--no-activity] [--no-plugins]
+#   selfcheck.sh [--no-tunnel] [--no-tailscale] [--no-browsers] [--no-cmcc] [--no-activity] [--no-plugins] [--no-3xui]
 BOX_ENV="${GROKBOT_BOX_ENV:-$HOME/.config/grokbot-cpa/box.env}"; [ -f "$BOX_ENV" ] && . "$BOX_ENV"
 PERSIST_ROOT=${PERSIST_ROOT:-$HOME}; CPA_DIR=${CPA_DIR:-$PERSIST_ROOT/cli-proxy-api}; TS_DIR=${TS_DIR:-$PERSIST_ROOT/tailscale}
 . "$CPA_DIR/common.sh" 2>/dev/null || { echo "FAIL  cpa: $CPA_DIR/common.sh missing (run install.sh)"; exit 1; }
@@ -14,13 +14,19 @@ code() { curl -s -o /dev/null -m "${3:-10}" -w '%{http_code}' ${2:+-H "Authoriza
 KEY=$(cat "$CPA_DIR/secrets/client-api-key" 2>/dev/null); MS=$(cat "$CPA_DIR/secrets/management-secret" 2>/dev/null)
 
 echo "== persistence (PERSIST_ROOT=$PERSIST_ROOT)"
-for v in CPA_DIR TS_DIR BOOT_SERVICES CPA_BOOTSTRAP ADSPOWER_DIR ROXY_DIR ACTIVITY_DIR CMCC_DIR; do
+for v in CPA_DIR TS_DIR BOOT_SERVICES CPA_BOOTSTRAP ADSPOWER_DIR ROXY_DIR ACTIVITY_DIR CMCC_DIR XUI_DIR; do
   p="${!v:-}"; [ -n "$p" ] || continue
   case "$p" in "$PERSIST_ROOT"/*) ok "$v under PERSIST_ROOT";; *) bad "$v=$p is outside PERSIST_ROOT (lost on reboot)";; esac
 done
 for b in "$CPA_BIN" "$CF_BIN" "$TS_DIR/tailscaled"; do case "$(readlink -f "$b" 2>/dev/null || echo "$b")" in "$PERSIST_ROOT"/*) ;; *) bad "binary $b not under PERSIST_ROOT";; esac; done
 miss=""; for p in ${BOOT_APT_PKGS:-}; do dpkg -s "$p" >/dev/null 2>&1 || dpkg -s "${p}t64" >/dev/null 2>&1 || miss="$miss $p"; done
 [ -z "$miss" ] && ok "boot apt packages present" || warn "apt packages missing (boot-services.sh reinstalls):$miss"
+
+echo "== memory"
+ma=$(awk '/^MemAvailable:/ {printf "%d", $2/1024}' /proc/meminfo); [ "${ma:-0}" -ge 1024 ] && ok "MemAvailable ${ma}MB" || warn "MemAvailable ${ma}MB < 1024MB (watchdogs will not hang-kill until it recovers)"
+if [ "${BOOT_SWAP_SIZE:-8G}" != 0 ]; then
+  grep -q "^${BOOT_SWAP_FILE:-/swapfile} " /proc/swaps && ok "swap ${BOOT_SWAP_FILE:-/swapfile} active" || warn "swap ${BOOT_SWAP_FILE:-/swapfile} not active (boot-services.sh creates it; needs sudo -n)"
+fi
 
 echo "== CPA"
 chk "cpa process running" cpa_running
@@ -60,6 +66,24 @@ if [ -z "${SKIP[tailscale]:-}" ]; then echo "== Tailscale"
   if [ "${TS_SSH:-1}" = 1 ]; then [ "$s" = true ] && ok "tailscale SSH enabled" || bad "tailscale SSH not enabled"; fi
   chk "tailscale watchdog running" lock_held "$TS_WD_LOCK"
   chk "tailscale state persisted" sudo -n test -s "$TS_DIR/tailscaled.state"
+fi
+if [ -z "${SKIP[3xui]:-}" ]; then echo "== 3x-ui"
+  XD=${XUI_DIR:-$PERSIST_ROOT/3x-ui}
+  if [ -x "$XD/app/x-ui" ] && [ -f "$XD/env.sh" ]; then
+    ( XUI_ROOT=$XD; . "$XD/env.sh"
+      ok()  { echo "PASS  $*"; }; bad() { echo "FAIL  $*"; }; warn() { echo "WARN  $*"; }
+      lock_held "$XD/.watchdog.lock" && ok "3x-ui watchdog running" || bad "3x-ui watchdog not running ($XD/start.sh)"
+      [ "$(file_age "$XD/watchdog.heartbeat")" -lt 120 ] && ok "3x-ui watchdog heartbeat < 120s" || bad "3x-ui watchdog heartbeat stale"
+      c=$(curl -s -o /dev/null -m 5 -w '%{http_code}' "http://127.0.0.1:$XUI_PANEL_PORT/"); [ "$c" = 200 ] && ok "3x-ui panel 127.0.0.1:$XUI_PANEL_PORT HTTP 200 ($("$XUI_BIN" -v 2>/dev/null))" || bad "3x-ui panel HTTP $c"
+      pgrep -f "^$XUI_BIN_FOLDER/xray-linux" >/dev/null && ok "xray running" || bad "xray not running"
+      for p in $XUI_SUB_PORT $XUI_NODE_PORT; do ss -ltn 2>/dev/null | grep -q "127.0.0.1:$p " && ok "listening 127.0.0.1:$p" || bad "nothing on 127.0.0.1:$p"; done
+      f=$(ls -1t "$XD"/backups/x-ui.db.* 2>/dev/null | head -1); [ -n "$f" ] && [ "$(file_age "$f")" -lt 180000 ] && ok "db backup ${f##*/}" || warn "no db backup in the last 2 days"
+      if [ -z "${SKIP[tunnel]:-}" ] && [ -n "$XUI_CF_HOSTNAME" ]; then
+        "$XD/tunnel.sh" status | grep -q "ready=yes" && ok "3x-ui tunnel connected" || bad "3x-ui tunnel not ready ($XD/cf-setup.sh status)"
+        c=$(curl -s -o /dev/null -m 15 -w '%{http_code}' "https://$XUI_CF_HOSTNAME/"); [ "$c" = 200 ] && ok "public https://$XUI_CF_HOSTNAME/ HTTP 200" || bad "public https://$XUI_CF_HOSTNAME/ HTTP $c"
+      elif [ -z "${SKIP[tunnel]:-}" ]; then warn "XUI_CF_HOSTNAME not set: 3x-ui is local only"; fi ) > /tmp/.selfcheck-3xui.$$ 2>&1
+    while IFS= read -r l; do case "$l" in PASS*) ok "${l#PASS  }";; FAIL*) bad "${l#FAIL  }";; WARN*) warn "${l#WARN  }";; esac; done < /tmp/.selfcheck-3xui.$$; rm -f /tmp/.selfcheck-3xui.$$
+  else bad "3x-ui not installed in $XD (box/3x-ui/install.sh, or --no-3xui)"; fi
 fi
 if [ -z "${SKIP[cmcc]:-}" ]; then echo "== keepalives"
   chk "cmcc WebUI running" pgrep -f cmcc_cloud_alive.webui
