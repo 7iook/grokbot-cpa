@@ -9,6 +9,11 @@ remote-management:
   # Hashed by CLIProxyAPI on startup; the plaintext copy is $CPA_DIR/secrets/management-secret.
   secret-key: "@MGMT_SECRET@"
   disable-control-panel: false
+  # Management panel from the 7iook fork (subscription/quota cockpit). The first missing management.html is still
+  # fetched from this repo's latest release; periodic background re-downloads are off so a hand-deployed
+  # $CPA_DIR/static/management.html is never overwritten.
+  disable-auto-update-panel: true
+  panel-github-repository: "https://github.com/7iook/Cli-Proxy-API-Management-Center"
 
 # OAuth credentials (claude-<account>.json, ...).
 auth-dir: "@AUTH_DIR@"

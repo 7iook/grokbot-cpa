@@ -10,13 +10,18 @@
 #    -> restart. Never kills a daemon younger than MIN_KILL_AGE (60s, lib.sh): a fresh daemon needs ~40-60s to
 #    reach Running here, and killing it earlier only restarts that wait (2026-10-17 07:59-08:01). No two
 #    restarts within RESTART_GAP (20s).
+#  - "unanswering" (tailscale status times out) is not acted on while MemAvailable < MEM_GUARD_MB (1024): under
+#    memory pressure the CLI just times out and each restart made it worse (2026-11-03 15:30-15:40, restart every
+#    ~60s). "offline" / process-missing / resume rules are unchanged (tailscaled rarely self-recovers after a resume).
 #  - watches the CPA watchdog: relaunches it (boot-services.sh) if it is gone, kills+relaunches it if hung.
+#  - watches the 3x-ui watchdog (~/3x-ui) the same way (added 2026-11-02).
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 exec 8>"$D/.watchdog.lock"; flock -n 8 || exit 0
 echo $$ > "$WD_PIDFILE"
 OFFLINE_LIMIT=${OFFLINE_LIMIT:-20}; UNANSWER_LIMIT=${UNANSWER_LIMIT:-15}
-RESUME_CHECK=${RESUME_CHECK:-5}; RESTART_GAP=${RESTART_GAP:-20}; TICK=${TICK:-1}; PEER_STALE=${PEER_STALE:-300}
+MEM_GUARD_MB=${MEM_GUARD_MB:-1024}; RESUME_CHECK=${RESUME_CHECK:-5}; RESTART_GAP=${RESTART_GAP:-20}; TICK=${TICK:-1}; PEER_STALE=${PEER_STALE:-300}
 CTRL_ERR='long-poll timed out|lite map update error|map response long-poll|PollNetMap: .*(timeout|context deadline)'
+mem_avail_mb() { awk '/^MemAvailable:/ { printf "%d", $2 / 1024; f = 1 } END { if (!f) print 999999 }' /proc/meminfo; }
 wlog() { echo "$(TZ=$LOG_TZ date '+%F %T %Z') $*" >>"$WLOG"; }
 run_ensure() {
   if lock_held "$D/.ensure.lock"; then
@@ -49,6 +54,20 @@ check_peer() { # the CPA watchdog; at most one relaunch per 30s
   last_peer=$now; wlog "CPA watchdog $why - relaunching it via boot-services.sh"
   "${CLEAN_ENV[@]}" setsid -f /bin/bash "$BOOT_SERVICES" </dev/null >/dev/null 2>&1 8>&-
 }
+XUI_D=${XUI_DIR:-$HOME/3x-ui}; last_xui=-1000
+check_xui() { # the 3x-ui watchdog; at most one relaunch per 30s
+  local now=$1 why="" age pid
+  [ -x "$XUI_D/watchdog.sh" ] && [ -x "$XUI_D/app/x-ui" ] && [ ! -f "$XUI_D/.watchdog-stopped" ] && [ $(( now - last_xui )) -ge 30 ] || return
+  if ! lock_held "$XUI_D/.watchdog.lock"; then why="is not running"
+  elif [ "$now" -ge "$quiet_until" ] && age=$(file_age "$XUI_D/watchdog.heartbeat") && [ "$age" -gt "$PEER_STALE" ]; then
+    why="looks hung (heartbeat ${age}s old)"
+    pid=$(cat "$XUI_D/watchdog.pid" 2>/dev/null); pid_is "$pid" "$XUI_D/watchdog\.sh" && kill -KILL "$pid" 2>/dev/null
+    sleep 0.5
+  fi
+  [ -n "$why" ] || return
+  last_xui=$now; wlog "3x-ui watchdog $why - relaunching it"
+  "${CLEAN_ENV[@]}" setsid -f /bin/bash "$XUI_D/watchdog.sh" </dev/null >>"$XUI_D/logs/watchdog.log" 2>&1 8>&-
+}
 bad_since=""; bad_kind=""; resume_at=""; resume_log=0; miss_streak=0
 last_peer=-1000; quiet_until=0; last_off=""; last_rotate=0
 trap 'wlog "watchdog stopping"; [ "$(cat "$WD_PIDFILE" 2>/dev/null)" = $$ ] && rm -f "$WD_PIDFILE"; exit 0' TERM INT
@@ -56,7 +75,7 @@ wlog "watchdog started (pid $$; resume check ${RESUME_CHECK}s, offline ${OFFLINE
 while true; do
   touch "$WD_HEARTBEAT"; now=$(uptime_s)
   off=$(( $(date +%s) - now )); [ -n "$last_off" ] && [ $(( off - last_off )) -gt 5 ] && quiet_until=$(( now + 20 )); last_off=$off
-  check_peer "$now"
+  check_peer "$now"; check_xui "$now"
   if [ $(( now - last_rotate )) -ge 60 ]; then last_rotate=$now
     for f in "$LOG" "$WLOG" "$ELOG"; do rotate_log "$f" 10485760; done
   fi
@@ -92,7 +111,9 @@ while true; do
     if [ -z "$bad_since" ] || [ "$kind" != "$bad_kind" ]; then bad_since=$(uptime_s); bad_kind=$kind
       wlog "observed $kind ($hp, daemon age $(tsd_min_age)s); restarting after ${limit}s (not before age ${MIN_KILL_AGE}s)"; fi
     dur=$(( $(uptime_s) - bad_since ))
-    [ "$dur" -ge "$limit" ] && restart "$kind for ${dur}s ($hp)"
+    if [ "$dur" -ge "$limit" ] && [ "$kind" = unanswering ] && mem=$(mem_avail_mb) && [ "$mem" -lt "$MEM_GUARD_MB" ]; then
+      [ $(( $(uptime_s) - ${last_memlog:-0} )) -ge 30 ] && { wlog "unanswering for ${dur}s but MemAvailable ${mem}MB < ${MEM_GUARD_MB}MB - not restarting (memory pressure)"; last_memlog=$(uptime_s); }
+    elif [ "$dur" -ge "$limit" ]; then restart "$kind for ${dur}s ($hp)"; fi
   fi
   sleep "$TICK" 8>&-
 done

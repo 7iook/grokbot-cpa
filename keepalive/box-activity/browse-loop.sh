@@ -15,6 +15,14 @@ PROFILE="$DIR/chrome-profile"
 LOG_MAX=$((10*1024*1024))
 
 mkdir -p "$DIR/logs" "$PROFILE"
+# own virtual screen: after a box reset only the agent desktops (:1,:3,...) exist, so :2 must be started here
+ensure_x() { DISPLAY_NUM=":2"   # always retry our own screen first
+  [ -S "/tmp/.X11-unix/X${DISPLAY_NUM#:}" ] && return 0
+  setsid Xvfb "$DISPLAY_NUM" -screen 0 1600x1000x24 -nolisten tcp >/dev/null 2>&1 </dev/null &
+  local i x; for i in 1 2 3 4 5 6 7 8 9 10; do sleep 0.5; [ -S "/tmp/.X11-unix/X${DISPLAY_NUM#:}" ] && return 0; done
+  # fallback: own screen failed -> pick any live screen (bot desktops come and go when bots are deleted)
+  for x in /tmp/.X11-unix/X*; do [ -S "$x" ] || continue
+    DISPLAY=":${x##*/X}" timeout 3 xdpyinfo >/dev/null 2>&1 && { DISPLAY_NUM=":${x##*/X}"; return 0; }; done; return 1; }
 
 # --- single instance (atomic mkdir; dir not inherited by children) ---
 if ! mkdir "$LOCKDIR" 2>/dev/null; then
@@ -58,6 +66,7 @@ log "{\"ev\":\"start\",\"ts\":$(date +%s),\"pid\":$$,\"display\":\"$DISPLAY_NUM\
 while true; do
   [ -f "$STOP" ] && { log "{\"ev\":\"stop\",\"ts\":$(date +%s),\"cycle\":$cycle}"; break; }
   cycle=$((cycle+1))
+  ensure_x || log "{\"ev\":\"xvfb_fail\",\"ts\":$(date +%s)}"
   # pick 2-3 random urls
   n=$(( (RANDOM % 2) + 2 ))
   picks=()
